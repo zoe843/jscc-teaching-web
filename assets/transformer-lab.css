@@ -1,0 +1,44 @@
+/* Transformer-JSCC chapter companion, 2026-10-11 */
+.chapter-links { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; }
+.chapter-links a { padding:6px 12px; border:1px solid #b9dce4; border-radius:8px; background:#f0fafb; color:var(--brand); font-size:13px; text-decoration:none; }
+.tl-controls { display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; margin-bottom:14px; }
+.tl-controls label { font-size:14px; font-weight:600; }
+.tl-controls select, .tl-controls button, .tl-controls input { font:inherit; accent-color:var(--brand); }
+.tl-controls select, .tl-controls button { border:1px solid #b4d1d8; border-radius:7px; padding:7px 11px; background:white; color:var(--ink); }
+.tl-controls button { cursor:pointer; }
+.tl-controls button:disabled { opacity:.45; cursor:default; }
+.tl-steps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.tl-step { border:1px solid #b9dce4; background:#fff; color:var(--ink); border-radius:9px; padding:12px 10px; text-align:left; font:inherit; font-size:13px; line-height:1.55; cursor:pointer; overflow-wrap:anywhere; }
+.tl-step small { display:block; color:var(--ink-3); font:11px var(--mono); margin-bottom:5px; }
+.tl-step[aria-pressed="true"] { background:#0e7490; border-color:#0e7490; color:white; }
+.tl-step[aria-pressed="true"] small { color:#ddf7fc; }
+.tl-step.channel { border:2px solid #d97706; }
+.tl-explain { padding:18px; border:1px solid #b9dce4; background:#f4fbfc; border-radius:10px; }
+.tl-explain h4 { margin:0 0 8px; }
+.tl-explain p { margin:7px 0; }
+.tl-shape { font-family:var(--mono); overflow-wrap:anywhere; color:#155e75; }
+.tl-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:14px 0; }
+.tl-metric { padding:12px; background:#eef8fa; border:1px solid #cfe5eb; border-radius:8px; font-size:12px; color:var(--ink-2); }
+.tl-metric b { display:block; font-size:20px; color:#155e75; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.tl-scroll { overflow-x:auto; max-width:100%; }
+.tl-grid { border-collapse:collapse; width:100%; margin:12px 0; font-variant-numeric:tabular-nums; }
+.tl-grid th,.tl-grid td { border:1px solid var(--line); padding:9px; text-align:center; white-space:nowrap; font-size:13px; }
+.tl-grid th { background:#edf6f8; }
+.tl-grid .tl-gain { background:#fff6e7; color:#92400e; }
+.tl-note { font-size:13px; color:var(--ink-2); line-height:1.85; }
+.tl-label { display:inline-block; color:#155e75; font-size:12px; font-weight:700; background:#e0f2f7; padding:2px 8px; border-radius:5px; }
+.tl-slider { width:min(100%,320px); vertical-align:middle; }
+@media(max-width:700px) {
+  .tl-steps { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .tl-metrics { grid-template-columns:1fr; }
+  .tl-metric b { font-size:19px; }
+  .tl-controls { align-items:flex-start; }
+  .tl-controls label { display:block; width:100%; }
+  .tl-explain { padding:12px; }
+  .chapter-links a { font-size:12px; }
+  .tl-grid { table-layout:fixed; }
+  .tl-grid th,.tl-grid td { padding:7px 3px; font-size:11.5px; white-space:normal; overflow-wrap:anywhere; }
+  .tl-grid th:first-child { width:32%; }
+  #ch4 .code-card .cl { width:100%; min-width:0; }
+  #ch4 .code-card .cl-code { min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; padding-right:10px; }
+}

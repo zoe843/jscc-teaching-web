@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer × JSCC · 核心代码手写教程</title>
+<link rel="stylesheet" href="assets/style.css?v=4">
+<link rel="stylesheet" href="assets/transformer-lab.css?v=2">
+<link rel="stylesheet" href="assets/katex/dist/katex.min.css?v=1">
+<script src="assets/katex/dist/katex.min.js?v=1" defer></script>
+<script src="assets/app.js?v=2" defer></script>
+<script src="assets/viz.js?v=2" defer></script>
+<script src="assets/transformer-lab.js?v=1" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-btn" id="menuBtn">☰</button>
+  <a class="logo" href="#ch0">Deep JSCC<span class="badge">手写版</span></a>
+  <span class="sub">从你写过的 BPSK 仿真出发 → 独立写出语义通信核心代码 · 配套《复试项目_Transformer语义通信方案》</span>
+</header>
+<div id="progress"></div>
+
+<nav class="sidebar" id="sidebar">
+  <div class="nav-group">
+    <div class="nav-title">开始</div>
+    <a class="nav-item" href="#ch0"><span class="no">00</span>导读 · 学完你能写出什么</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-title">第一部分 · 把图像送进信道</div>
+    <a class="nav-item" href="#ch1"><span class="no">01</span>从 BPSK 仿真到 JSCC</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-title">第二部分 · 独立写出 V0</div>
+    <a class="nav-item" href="#ch2"><span class="no">02</span>CNN 版 JSCC（编码器·解码器·训练）</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-title">第三部分 · 评测与预算</div>
+    <a class="nav-item" href="#ch3"><span class="no">03</span>SNR 随机化 · 评测 · JPEG 基线</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-title">第四部分 · Transformer 图像重建</div>
+    <a class="nav-item" href="#ch4"><span class="no">04</span>Transformer 版 JSCC（V1）</a>
+<a class="nav-item sub-item" href="#ch4-route">4.0 · 十二步全流程</a>
+<a class="nav-item sub-item" href="#ch4-condition">4.7 · SNR 条件调节</a>
+<a class="nav-item sub-item" href="#ch4-budget">4.8 · patch 与参数预算</a>
+<a class="nav-item sub-item" href="#ch4-experiments">4.9 · 公平对照实验</a>
+<a class="nav-item sub-item" href="#ch4-reading">4.10 · 论文对照</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-title">验收</div>
+    <a class="nav-item" href="#ch5"><span class="no">05</span>四关卡：独立写代码验收</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-title">附录</div>
+    <a class="nav-item" href="#apA"><span class="no">A</span>术语速查卡</a>
+  </div>
+</nav>
+<div class="overlay" id="overlay"></div>
+
+<main>
+<div class="container">
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <h1>Transformer × JSCC<br>从 CNN 基础到信道感知重建</h1>
+<p>从你写过的 BPSK 仿真出发，先亲手实现 CNN-JSCC V0，再把<strong style="color:#fff">图像切块、位置编码、多头注意力与受限信道</strong>连成 Transformer-JSCC V1。进一步学习 SNR 条件调节，并用形状、参数与实验数据检验每一步。</p>
+  <div class="chips">
+    <span class="chip">起点 = 你亲手写过的 BPSK 仿真</span>
+    <span class="chip">PyTorch 新增 API 只用一张速查表</span>
+    <span class="chip">算法卡先行 · 公式 ↔ 代码逐行对照</span>
+    <span class="chip">第 5 章四关卡限时验收</span>
+  </div>
+  <div class="start"><a href="#ch0">从导读开始 →</a> <a href="#ch3">评测与基线 →</a> <a href="#ch4">Transformer 版 →</a> <a href="#ch4-condition">信道感知改进 →</a></div><p style="font-size:13px">2026-10-11 更新 · Transformer 主线 · SNR 门控与 patch 预算 · 8 个交互</p>
+</div>
+
+<!-- ================= CH0 导读 ================= -->
+<section class="chapter" id="ch0">
+  <h2><span class="chno">第 0 章</span>导读 · 学完你能写出什么</h2>
+
+  <div class="callout summary"><span class="co-title">📌 一句话定位</span>
+  这不是「看懂 JSCC」的教程，是「<strong>写出 JSCC</strong>」的教程。第 1 章把你写过的 BPSK 仿真升级成「图像过信道」（信道层代码 ≈30 行），第 2 章手写 CNN 版编解码器和训练循环（≈120 行）。学完并通过第 5 章验收，才说明具备了实现 W1 的基础；正式训练与评测仍需实际完成。后续主线是第 4 章 Transformer-JSCC：先组装基础版，再增加一处信道条件调节。</div>
+
+  <h3>0.1 本页 ↔ 复试项目方案的对照</h3>
+  <p>桌面那份《复试项目_Transformer语义通信方案.md》里的五周计划，跟本页章节的关系：</p>
+  <table class="map-table">
+    <tr><th>方案里的周</th><th>本页章节</th><th>产出</th></tr>
+    <tr><td>W0 热身（建立概念）</td><td>导读与先修节</td><td>先学本页，遇到 API 再查官方文档与参考实现</td></tr>
+    <tr><td>W1 写 CNN 版 JSCC</td><td>第 1 + 2 章</td><td>channel.py + model_v0.py + train_v0.py</td></tr>
+    <tr><td>W2 SNR 随机化 + JPEG 基线</td><td>第 3 章</td><td>悬崖效应曲线（图1）</td></tr>
+    <tr><td>W3 Transformer 基础版</td><td>4.0–4.6</td><td>亲手组装 V1，形成 V0/V1 同预算对照</td></tr><tr><td>基础完成后的进阶</td><td>4.7–4.11</td><td>SNR 门控、patch/k 预算与消融；按掌握情况推进</td></tr>
+    <tr><td>—</td><td>第 5 章</td><td>四关卡验收：确认你真的能独立写</td></tr>
+  </table>
+
+  <h3>0.2 开工前的三个自查</h3>
+  <ol class="steps">
+    <li><strong>Transformer 四层次</strong>：白板画 attention 块、形状手推、softmax(QKᵀ/√d)V 默写、50 行复述——这是可自查的前置能力，不假定你已经验收。还不熟时先做第 4 章的形状例子，再回看 Transformer 教程。</li>
+    <li><strong>PyTorch 基础</strong>：Tensor=C 数组整块算、class/self/forward、常用 API。是否掌握以你自己能跑通并解释为准；不熟时先回看课程的先修内容。第 2 章开头有「新增 API 速查」，只补本页新出现的（Conv2d 等）。</li>
+    <li><strong>BPSK 仿真</strong>：你 Python 仿真单元4 全通。第 1 章会先复习一遍，作为整座楼的地基。</li>
+  </ol>
+
+  <h3>0.3 跑码件与协作协议（先读，免得搞混）</h3>
+  <p>老配方：每个概念讲完配<strong>跑码件</strong>——纯 NumPy/PyTorch 玩具脚本，放在网页目录的 <code>demos/</code> 里，把公式和行为跑给你看，输出直接预印在网页里。<strong>协议边界</strong>（同《复试项目方案》§5）：demos 里的玩具脚本是教学演示；而 <code>channel.py / model_v0.py / train_v0.py</code> 以及 model_v1.py 这些项目核心代码必须你亲手写，AI 只 review——第 5 章关卡 4（限时独立写 V0）就是这条协议的验收点。</p>
+
+  <h3>0.4 三分钟看懂全局：JSCC 系统里数据怎么流</h3>
+  <p>整个项目的全部代码就是下面这条流水线（点每个模块看它的输入输出和职责）。第 1、2 章做的事情 = 把这条线上的每个模块逐个写出来。</p>
+
+  <div class="viz-panel" id="viz-pipeline">
+    <div class="vp-head"><span class="vp-title">交互 1 · JSCC 数据流水线（点击模块）</span></div>
+    <div class="vp-body"><svg id="svg-pipeline" class="viz-svg"></svg></div>
+    <div class="vp-ctrl"><span class="viz-note" style="margin:0">编码器把 32×32×3=3072 维的图压成 k 个「信道符号」（连续实数，不是比特！）——这是 JSCC 和传统链路的本质区别。归一化保证发射功率恒定，信道加噪，解码器从带噪符号恢复图像。下面每个模块第 1、2 章都会亲手写。</span></div>
+  </div>
+
+<div class="callout warn"><span class="co-title">先分清重建与任务目标</span>本页主线使用 MSE 训练<strong>图像重建 JSCC</strong>：网络学习在有限信道使用次数下保留重建信息。把它放在“语义通信”背景下讨论可以，但不能仅凭压缩和重建就证明语义理解。后续若接 YOLO 测 mAP，要区分“重建后检测的评测”和“检测损失参与训练的任务导向优化”。</div>
+
+  </section>
+
+<!-- ================= CH1 从 BPSK 到 JSCC ================= -->
+<section class="chapter" id="ch1">
+  <h2><span class="chno">第 1 章</span>从 BPSK 仿真到 JSCC：把图像送进信道</h2>
+
+  <div class="callout summary"><span class="co-title">📌 本章结论</span>
+  你单元4 写过的 BPSK 仿真 = 「比特 → 符号 → 加噪 → 判决」。JSCC 只改两处：① 信源从比特换成<strong>编码器输出的连续符号</strong>（不做量化、不压缩成比特，直接过信道）；② 接收端从「判决」换成<strong>解码器重建</strong>。本章产出 <code>channel.py</code>：功率归一化 + AWGN 信道层 + 瑞利信道层，约 30 行，全部你亲手写。</div>
+
+  <p>在碰任何代码之前，本章前四节先把四个「默认你会但其实没讲过」的地基从零铺掉：<strong>图像在计算机里是什么、分贝 dB、随机数与概率的最小套装、功率为什么是 E[x²]</strong>。这四块任何一个含糊，后面代码卡就会有看不懂的行——先花 20 分钟把它们钉死。</p>
+
+  <h3>1.0 图像在计算机里是什么：张量与形状记法</h3>
+  <p>后面所有代码卡都长这个样子：<code>(B, 3, 32, 32)</code>。现在从零把它讲透。</p>
+  <p>一张 32×32 的彩色图，在计算机里就是 <strong>3 个 32×32 的数字网格叠在一起</strong>——R、G、B 各一张，每个数在 0~255 之间（0=这个通道最暗，255=最亮）。所以「一张图」= 3×32×32 = 3072 个数字。</p>
+  <table class="kv-table">
+    <tr><th>记号</th><th>含义</th><th>你哪里见过</th></tr>
+    <tr><td class="mono">(32, 32, 3)</td><td>NumPy/OpenCV 的约定：高×宽×通道（HWC）</td><td>YOLO 里 <code>cv2.imread</code> 出来的数组就是这个排法</td></tr>
+    <tr><td class="mono">(3, 32, 32)</td><td><strong>PyTorch 的约定：通道×高×宽（CHW）</strong>——通道挪到最前面，本项目全程用这个</td><td><code>ToTensor()</code> 会自动帮你把 HWC 转成 CHW</td></tr>
+    <tr><td class="mono">(B, 3, 32, 32)</td><td>最前面再加一维 <strong>B = batch</strong>：一次同时喂 B 张图（GPU 喂一张也是喂，凑一批算得快）</td><td>所有代码卡的第一个维度</td></tr>
+  </table>
+  <div class="callout tip"><span class="co-title">💡 读形状的肌肉记忆</span>
+  从今天起看到任何形状，从左到右读成「<strong>每批几张图，每张几通道，高多少，宽多少</strong>」。四维 (B,C,H,W) 是 PyTorch 图像网络的世界观，第 2 章所有卷积都在这四维上做文章。另外两个约定：像素值域 <strong>[0,255] 除以 255 归到 [0,1]</strong>（ToTensor 顺手做掉，第 2 章细讲）；「32×32×3 = 3072 维」这种乘法在本项目里天天算，练到脱口而出。</div>
+
+  <h3>1.1 分贝 dB：通信人的「科学计数法」</h3>
+  <p><strong>为什么需要 dB</strong>：信噪比的真实比值可以从 0.0001（噪声是信号一万倍）跨到 10000（信号是噪声一万倍）。直接写比值，数字要么巨长要么巨碎。取对数压缩一下：10^-4 到 10^4 变成 -40 到 40，好写好画好比较。</p>
+  <div class="formula-card">
+    <div class="f-head"><span class="f-tag">式 1-1 · 分贝定义</span><span class="f-name">功率比值取以 10 为底的对数再乘 10</span></div>
+    <div class="math-display">\text{SNR}_{\text{dB}} = 10\log_{10}\!\left(\dfrac{P_{\text{信号}}}{P_{\text{噪声}}}\right) \quad\Longleftrightarrow\quad \dfrac{P_{\text{噪声}}}{P_{\text{信号}}} = 10^{-\text{SNR}_{\text{dB}}/10}</div>
+    <p style="margin:4px 0 0;font-size:13.5px;color:var(--ink-2)">左边是定义（dB 往回变倍数），右边是它的<strong>反解</strong>——算法 1-2 里那行 <code>10 ** (-snr_db / 10)</code> 的全部来历，就这一行公式。</p>
+  </div>
+  <table class="kv-table">
+    <tr><th>SNR (dB)</th><th>信号 : 噪声功率</th><th>体感</th><th>本项目里</th></tr>
+    <tr><td class="rowhead">0 dB</td><td>1 : 1</td><td>一半能量是信号，一半是噪声</td><td>实验区下限附近</td></tr>
+    <tr><td class="rowhead">3 dB</td><td>≈ 2 : 1</td><td>+3dB ≈ 功率翻倍（精确 1.995）</td><td>—</td></tr>
+    <tr><td class="rowhead">10 dB</td><td>10 : 1</td><td>+10dB = ×10</td><td>训练主战场</td></tr>
+    <tr><td class="rowhead">20 dB</td><td>100 : 1</td><td>+20dB = ×100</td><td>实验区上限，基本清晰</td></tr>
+    <tr><td class="rowhead">-3 dB</td><td>≈ 1 : 2</td><td>负数=信号比噪声还弱</td><td>悬崖效应演示区</td></tr>
+  </table>
+  <p><strong>手算三连</strong>（拿出纸，做完再看答案）：① SNR=6dB，噪声功率是信号的几分之几？② 实测 E[n²]=0.01（信号功率 1），SNR 是多少 dB？③ SNR 从 10dB 掉到 0dB，噪声功率变了几倍？</p>
+  <details class="quiz-item"><summary>手算三连的答案</summary>
+    <div class="ans">① 10^(-6/10) ≈ 0.25，四分之一（6dB ≈ 两个 3dB：×2 再 ×2）。② SNR = 10·log10(1/0.01) = 20dB。③ 噪声/信号 从 0.1 变成 1，变 10 倍——「掉 10dB = 噪声功率 ×10」，跟表格里「+10dB = ×10」是同一句话反过来。</div>
+  </details>
+  <div class="callout analogy"><span class="co-title">🎓 为什么是乘 10 不是乘 20？</span>
+  dB 的定义对<strong>功率比</strong>用 10log10，对<strong>幅度比</strong>（电压/声压）用 20log10——幅度平方才是功率，多出来的平方在对数里变成 ×2。本项目公式里全是功率，一律乘 10。通信原理课会正式推，这里记住「功率用 10」防混淆即可。</div>
+
+  <h3>1.2 随机数与概率：最小套装（四个词）</h3>
+  <p>信道噪声是随机的，所以本章绕不开四个概率词。每个都用你已经写过的代码来定义：</p>
+  <table class="kv-table">
+    <tr><th>词</th><th>人话定义</th><th>代码里的样子</th></tr>
+    <tr><td class="rowhead">期望 E[X]</td><td>取值按概率加权的平均；样本够多时 = 直接求平均</td><td class="mono">np.mean(x)</td></tr>
+    <tr><td class="rowhead">方差 σ²</td><td>「偏离平方」的平均 E[(X−μ)²]，衡量波动大小</td><td class="mono">np.mean((x-mu)**2)</td></tr>
+    <tr><td class="rowhead">标准差 σ</td><td>方差开根号，「典型偏离幅度」（跟原值同单位）</td><td class="mono">np.sqrt(np.var(x))</td></tr>
+    <tr><td class="rowhead">高斯/正态分布</td><td>钟形曲线：中间密两头稀，σ 越大越矮胖</td><td class="mono">rng.normal(0, σ, N)</td></tr>
+  </table>
+  <p>你在单元4 写过 <code>rng.normal(0, sigma, n_bits)</code>——现在用概率语言重述：<strong>从均值 0、标准差 σ 的高斯分布里抽 n_bits 个样本</strong>。四个新认识：</p>
+  <ol class="steps">
+    <li><strong>噪声功率 = 方差</strong>：均值 0 时，E[n²] = Var(n) = σ²。「噪声的平均平方值」在概率课叫方差、在通信课叫功率——1.3 节正式把两个课的词接上。</li>
+    <li><strong>大数定律</strong>：样本够多时实测平均 → 理论值。跑码件第 3 节造 100 万个噪声点，实测功率 0.1001 ≈ 理论 0.1，就是它。</li>
+    <li><strong>固定种子</strong>：<code>np.random.default_rng(42)</code> 里的 42 是种子——同一颗种子每次运行生成同一串「随机」数。随机的是分布，不随机的是实验的可复现性。</li>
+    <li><strong>复高斯 CN(0,1)</strong>：通信噪声天然带两个维度（同相 I + 正交 Q），记作 <span class="math">n \sim \mathcal{CN}(0,1)</span>，含义 = <strong>实部、虚部各一个独立的 N(0,1/2)，两部分功率相加才是 1</strong>。本教程教学版全用实数符号；复数版只是每步拆成两份，想上再回来。</li>
+  </ol>
+
+  <h3>1.3 功率：为什么 E[x²] 叫「功率」</h3>
+  <p>信号与系统的说法：阻值 1Ω 的电阻上，瞬时功率 P = v²/R = v²。所以对一串信号值，<strong>「每个值平方」就是「瞬时功率」，取平均 E[x²] 就是「平均功率」</strong>——没有更多物理，就是平方求平均。三件事一次钉死：</p>
+  <ol class="steps">
+    <li><strong>信号功率</strong> = E[s²]（符号平方的平均）。功率归一化的目标就是让它 = 1。</li>
+    <li><strong>噪声功率</strong> = E[n²] = σ²（高斯、均值 0 时，方差就是平均功率）。</li>
+    <li><strong>SNR</strong> = 两者之比，按式 1-1 换成 dB。整条链：归一化 → σ² 有定义 → SNR 有定义 → 曲线能画。</li>
+  </ol>
+  <div class="callout analogy"><span class="co-title">🎓 C 类比</span>
+  E[x²] 就是一个 for 循环：<code>for(i) acc += x[i]*x[i]; power = acc/N;</code>。「期望」「平均」「均值」三个词在代码里都是这个循环。</div>
+
+  <h3>1.4 复习：你写过的 BPSK 仿真里有什么</h3>
+  <p>单元4 你画过那张 ber_bpsk.png，当时代码的骨架是（伪代码回忆，不用翻原文件）：</p>
+  <div class="code-card">
+    <div class="cc-head"><span class="cc-file">单元4 仿真的骨架（回忆）</span><span class="cc-desc">你已经写过的一维 BPSK 链路 · 下面表格逐行拆</span></div>
+    <pre data-lang="python">bits = np.random.randint(0, 2, n_bits)      # ① 信源：随机比特
+symbols = 1 - 2 * bits                       # ② 映射：0→+1, 1→-1
+noise = rng.normal(0, sigma, n_bits)         # ③ 信道：加高斯噪声
+received = symbols + noise                   #    y = x + n
+decoded = (received < 0).astype(int)         # ④ 判决：负号判 1
+ber = np.mean(decoded != bits)               # ⑤ 统计误码率</pre>
+  </div>
+  <table class="kv-table">
+    <tr><th>行</th><th>逐行拆解</th></tr>
+    <tr><td class="rowhead">① randint</td><td>在 <strong>[0, 2)</strong> 半开区间抽整数 = 只有 0 和 1，抽 n_bits 个。Python 区间左闭右开的老规矩。</td></tr>
+    <tr><td class="rowhead">② 1-2*bits</td><td>一行算术完成映射：bits=0 → 1-0=+1；bits=1 → 1-2=-1。紧凑但没毛病——拆开写就是 <code>if bits==0: s=+1 else: s=-1</code> 的向量化。</td></tr>
+    <tr><td class="rowhead">③ normal</td><td>三个参数 = (均值, 标准差σ, 个数N)。注意第二个参数是 <strong>σ 不是 σ²</strong>——1.2 节的词：抽 N 个高斯样本。</td></tr>
+    <tr><td class="rowhead">④ 相加</td><td>两个同形状数组逐元素相加，就是 y = x + n 本尊。</td></tr>
+    <tr><td class="rowhead">⑤ astype</td><td><code>received &lt; 0</code> 先得到一个 True/False 数组，<code>.astype(int)</code> 把 True→1、False→0。「判决」就是这一比。</td></tr>
+    <tr><td class="rowhead">⑥ mean(≠)</td><td><code>decoded != bits</code> 又是一个布尔数组（错=True），对布尔数组求 mean = True 的占比 = 误码率。这个「布尔直接求平均」的紧凑写法值得单独记住：布尔在 NumPy 里就是 0/1。</td></tr>
+  </table>
+  <div class="callout analogy"><span class="co-title">🎓 关键转变：把「一步」换成「一个网络」</span>
+  BPSK 里 ② 的映射是<strong>人为规定</strong>的（0→+1）；JSCC 里这个映射换成<strong>训练出来的神经网络</strong>（编码器）。④ 的判决换成<strong>另一个网络</strong>（解码器）。③ 的信道——加高斯噪声——<strong>一行都不用变</strong>，它就是你写过的那行 <code>x + noise</code>，只不过从 NumPy 搬进 PyTorch。这就是整个项目的骨架，没有更多了。</div>
+
+  <h3>1.5 换个信源：不先变成比特，怎样完成压缩和传输？</h3>
+  <p>传统链路的信源编码思路：图像 → JPEG 压缩成比特 → 比特过信道。这里有一个通信原理里的根本假设——<strong>香农分离定理</strong>：只要码长无限长，信源编码和信道编码可以分开设计、各自最优，合起来也不损失。</p>
+  <p>但现实不给你无限码长。实际系统块长短、时延受限，固定码率的数字链路在实际信道差于设计条件时，可能出现信道译码失败，进而导致源解码质量骤降，称为<strong>悬崖效应</strong>。错误保护、码率自适应和渐进编码会影响这种行为，不能把所有分离式系统都描述为“一错就全毁”。</p>
+  <p>本页模拟 Deep JSCC 的思路：把压缩与抗噪编码放进同一个可学习映射，不先生成单独的压缩比特码流，而是把图像映射成一组<strong>连续实数符号</strong>过信道。失真从「整块崩坏」变成「随 SNR 平滑劣化」——下面这个交互是这个项目的题眼，拖一下 SNR：</p>
+
+  <div class="viz-panel" id="viz-awgn">
+    <div class="vp-head"><span class="vp-title">交互 2 · 悬崖效应 vs 平滑退化（8×8 微型图演示）</span></div>
+    <div class="vp-body"><svg id="svg-awgn" class="viz-svg"></svg></div>
+    <div class="vp-ctrl">
+      <label>SNR <input type="range" id="awgn-snr" min="0" max="20" value="18" step="1"> <span id="awgn-snr-val">18</span> dB</label>
+      <span class="viz-note" style="margin:0"><strong>这是机制示意，不是实验结果。</strong>上排直接给像素加噪，没有训练过的 JSCC 编解码器；下排按人为 sigmoid 门限把块填灰，没有运行 JPEG/BPSK。滑块仅帮助比较连续污染与门限失效；实际曲线、门限及性能应按第 3 章实测。上排还经过像素裁剪，显示值不再服从原高斯分布。</span>
+    </div>
+  </div>
+
+<h3 id="ch1-budget">1.6 信道符号、像素与带宽：先统一账本</h3>
+<p>本教程编码器把一张 32×32 RGB 图的 <strong>n=3×32×32=3072 个实数像素值</strong>映射成 k=256 个实数，之后直接加实高斯噪声。这 256 个数是连续的信道输入，不是 256 比特，也不是 256 个 RGB 像素；这种模型仍有维度压缩，只是没有显式 JPEG 码流。</p>
+<table class="map-table"><tr><th>量</th><th>本页数值</th><th>定义</th></tr><tr><td>H×W</td><td>1024</td><td>空间像素位置数，每个位置有 RGB 三个值</td></tr><tr><td>n=3HW</td><td>3072</td><td>源向量维度，即所有颜色分量的数目</td></tr><tr><td>k</td><td>256</td><td>本教程的实数信道使用次数</td></tr><tr><td>k/n</td><td>256/3072=1/12</td><td>每个源分量对应多少次实数信道使用</td></tr><tr><td>k/(HW)</td><td>256/1024=1/4</td><td>每个空间像素的实数符号预算，另一种统计单位</td></tr></table>
+<div class="callout warn"><span class="co-title">对照论文时，必须连单位一起抄</span><a href="https://arxiv.org/html/1809.01733v3">2019 年原论文</a>定义源向量 x∈Rⁿ、信道向量 z∈Cᵏ，k 计<strong>复数</strong>信道使用。本页 k 计<strong>实数</strong>使用。若把 256 个实数两两装成 I/Q，会得到 128 个复数；这只是维度换算，功率和每个实维噪声方差也要重新对齐。不能把本页 1/12 与论文的 1/12 直接当成相同实验。旧版把 n 写成 1024 并称作原论文惯例，此处已校正。</div>
+<p>12:1 在这里仅指 3072/256 的<strong>维度比</strong>，不是文件字节压缩率；连续符号有发射功率与噪声约束，不能按“一个浮点数能存几字节”来计算无线预算。</p>
+
+    <h3>1.7 功率归一化：过信道前的必经一步</h3>
+  <p>信道的噪声强度由 SNR 定义，而 SNR = 信号功率 / 噪声功率。如果编码器输出的符号忽大忽小，SNR 就无从定义——所以发射前必须<strong>把符号功率归一到 1</strong>（通信原理里的「平均功率约束」落进代码就是这一步）。</p>
+
+  <div class="formula-card">
+    <div class="f-head"><span class="f-tag">算法 1-1 · 功率归一化</span><span class="f-name">把每张图的符号平均功率约束到约 1</span></div>
+    <div class="math-display">s_{\text{norm}} = \dfrac{s}{\sqrt{\tfrac{1}{k}\textstyle\sum_{i=1}^{k} s_i^2 + \varepsilon}}</div>
+    <table class="kv-table">
+      <tr><th>符号</th><th>含义</th><th>代码里叫</th></tr>
+      <tr><td class="rowhead"><span class="math">s</span></td><td>编码器输出的 k 个原始符号</td><td class="mono">s</td></tr>
+      <tr><td class="rowhead"><span class="math">\tfrac{1}{k}\sum s_i^2</span></td><td>符号的平均功率（均方值 RMS²）</td><td class="mono">torch.mean(s**2, dim=1, keepdim=True)</td></tr>
+      <tr><td class="rowhead"><span class="math">\varepsilon</span></td><td>防除零的小量 1e-8（工程习惯）</td><td class="mono">eps</td></tr>
+    </table>
+  </div>
+
+  <p><strong>手算一遍</strong>（老规矩，勾股数最友好）：符号 [3, 4]，平均功率 = (9+16)/2 = 12.5，RMS = √12.5 ≈ 3.54，归一化后 ≈ [0.85, 1.13]。验证：0.85² + 1.13² ≈ 2 → 每符号平均功率 = 2/2 = 1 ✓。</p>
+
+  <div class="code-card notes-on" id="code-norm">
+    <div class="cc-head"><span class="cc-file">channel.py · power_norm</span><span class="cc-desc">5 行。注意 keepdim=True 是为了让除法广播对齐</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">def power_norm(s, eps=1e-8):
+    # s: (B, k)  编码器输出的原始符号
+    rms = torch.sqrt(torch.mean(s ** 2, dim=1, keepdim=True) + eps)
+    return s / rms</pre>
+    <script class="cc-notes" type="application/json">{"1":"B=batch（一次喂多少张图），k=256。s 是二维张量","2":"dim=1 沿符号维求均方 → (B,1)，每个样本自己的功率；keepdim 保留这一维，下一行除法才能逐行广播；+eps 防止编码器输出了全零（梯度会流经这里，除零会炸出 nan）","3":"逐元素除：(B,k) ÷ (B,1) 广播成每行除以自己的 RMS"}</script>
+  </div>
+  <div class="callout analogy"><span class="co-title">🎓 C 类比</span>
+  这就是一个按行归一化的 <code>for(i=0; i&lt;B; i++){ rms=sqrt(sum(s[i]^2)/k); for(j) s[i][j]/=rms; }</code>——PyTorch 的 broadcast 把内层循环隐掉了。你在位置编码广播可视化（transformer-course-web 交互 3b）里见过同一套广播规则。</div>
+
+  <h3>1.8 AWGN 信道层：你写过的那行 <code>x + noise</code> 搬进 PyTorch</h3>
+  <p>先解决换算：<strong>SNR 用 dB 表示时，噪声方差怎么算？</strong> 定义 SNR(dB) = 10·log₁₀(P/σ²)，信号功率归一化后 P=1，反解：</p>
+  <div class="formula-card">
+    <div class="f-head"><span class="f-tag">算法 1-2 · AWGN 信道</span><span class="f-name">加性高斯白噪声，唯一要算的就是 σ²</span></div>
+    <div class="math-display">\sigma^2 = \dfrac{P}{10^{\text{SNR}_{\text{dB}}/10}}, \qquad y = s + n,\quad n \sim \mathcal{N}(0, \sigma^2)</div>
+    <p style="margin:4px 0 0;font-size:13.5px;color:var(--ink-2)">手算：SNR = 10 dB → σ² = 1/10¹ = <strong>0.1</strong>；SNR = 0 dB → σ² = 1（噪声功率=信号功率，对半分）；SNR = 20 dB → σ² = 0.01。本页实数功率比定义下，<code>sigma = 10 ** (-snr_db / 20)</code> 是同一个换算的 σ（不是 σ²）版本；复用单元 4 前另查它是否用 Eᵦ/N₀，见 3.4 的 3 dB 换算——注意开没开根号，这是最常见的手滑点。</p>
+  </div>
+
+  <div class="code-card notes-on" id="code-awgn">
+    <div class="cc-head"><span class="cc-file">channel.py · AWGNChannel</span><span class="cc-desc">实数 AWGN · P=1 的固定发射功率约定</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">class AWGNChannel(nn.Module):
+    def forward(self, s, snr_db):
+        # s: (B, k) 已归一化，平均功率 ≈ 1
+        sigma2 = 1.0 / (10 ** (snr_db / 10))
+        sigma = sigma2 ** 0.5
+        noise = torch.randn_like(s) * sigma
+        return s + noise</pre>
+    <script class="cc-notes" type="application/json">{"1": "snr_db 为每批共享的 Python 标量。", "2": "前面已按每图施加单位平均功率约束；eps 使功率略低于 1。", "3": "用约定发射功率 P=1 算噪声方差，不能随每次信号幅度自适应放大噪声。", "4": "Python 标量开根号用 **0.5；torch.sqrt 只接收 Tensor。", "5": "生成与 s 同形状的独立标准高斯，再按 sigma 缩放。", "6": "加法对 s 可导，采样噪声作为这次前向的随机常量。"}</script>
+  </div>
+
+<h3>1.9 瑞利衰落：两个高斯分量合成一个幅度</h3>
+<p>AWGN 模型把信道增益固定为 1；多径环境中的增益还会随机变化。多条路径叠加时，有时增强、有时抵消。<strong>瑞利模型适合没有明显主导直射分量的散射环境</strong>；有较强直射的卫星或地面链路常考虑莱斯模型，不能简单把“卫星”等同于“瑞利”。</p>
+<div class="formula-card"><div class="f-head"><span class="f-tag">算法 1-3 · 归一化瑞利幅度</span></div>
+<div class="math-display">a,b\overset{\mathrm{iid}}\sim\mathcal N(0,1)</div><div class="math-display">h=\sqrt{(a^2+b^2)/2},\qquad E[h^2]=1</div><div class="math-display">y=hs+n,\qquad y_{\mathrm{eq}}\approx y/h=s+n/h</div>
+<p>a 和 b 是两个独立方向的高斯分量。平方相加开根号才得到瑞利幅度；除以 √2 保证总平均功率为 1。<strong>|N(0,1)| 是半正态分布，不是瑞利分布。</strong>只验证 E[h²]=1 不足以判断分布是否正确，还要看均值或深衰落概率。</p></div>
+<p><strong>代数值：</strong>a=0.6、b=0.8，则 h=√(1/2)≈0.707；若发送 s=1、噪声 n=0.1，接收 y≈0.807，除以 h 后约 1.141。均衡修正了信号增益，却把噪声从 0.1 放大到约 0.141。若 h=0.1，噪声标准差放大 10 倍，方差放大 100 倍。</p>
+<div class="callout tip"><span class="co-title">明确教学假设</span>本页使用“实数符号＋瑞利幅度＋理想相位补偿”的简化模型；每张图采一个 h，图内 k 个符号共享 h，称为块衰落。接收端假设知道 h（理想 CSI）。完整复信道还含随机相位与 I/Q 噪声，不能把本例声称为完整复基带复现。</div>
+<div class="code-card notes-on" id="code-rayleigh"><div class="cc-head"><span class="cc-file">channel.py · RayleighChannel · 教学参考片段</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+<pre data-lang="python">class RayleighChannel(nn.Module):
+    def forward(self, s, snr_db):
+        B, k = s.shape
+        a = torch.randn(B, 1, device=s.device, dtype=s.dtype)
+        b = torch.randn_like(a)
+        h = torch.sqrt((a ** 2 + b ** 2) / 2.0)
+        sigma = 10.0 ** (-snr_db / 20.0)
+        noise = torch.randn_like(s) * sigma
+        y = h * s + noise
+        y_eq = y / h.clamp_min(1e-6)
+        return y_eq</pre>
+<script class="cc-notes" type="application/json">{"2":"B 是图数，k 是每图发送的实数数目。","3":"每张图一个 a，所以形状 (B,1)；dtype 和 device 与 s 对齐。","4":"独立再采一个 b，不能把 a 自己重复使用。","5":"两分量平方和除以 2 再开根号，得到平均平方为 1 的瑞利幅度。","6":"snr_db 是 Python 标量，此处直接算标准差；不把 float 传给只接受 Tensor 的 torch.sqrt。","7":"信道噪声与 h 独立；不要乘 h，否则会人为抹掉深衰落导致的 SNR 下降。","8":"(B,1) 广播到 (B,k)：同一图所有符号乘同一个 h。","9":"限幅仅防极小分母，改变了极端深衰落尾部，正式评测需披露 1e-6。它不能消除深衰落，也不保证训练永远稳定。","10":"返回均衡后的符号；除 h 后噪声被放大。"}</script></div>
+
+    <h3>1.10 跑码件：先把三张算法卡跑给你看</h3>
+  <p>老配方：概念讲完配<strong>跑码件</strong>。打开命令行，进网页目录下的 <code>demos</code> 文件夹，跑：</p>
+  <div class="code-card">
+    <div class="cc-head"><span class="cc-file">demos/demo_ch1_channels.py</span><span class="cc-desc">纯 NumPy 玩具，只验证三张算法卡的公式，不含任何网络代码</span></div>
+    <pre data-lang="text">cd jscc-teaching-web/demos
+python demo_ch1_channels.py</pre>
+  </div>
+  <p>预期输出（我在本机实跑的结果，你跑出来应当一字不差——种子固定了）：</p>
+  <details class="quiz-item"><summary>点开看完整运行输出</summary>
+    <div class="ans" style="font-family:var(--mono);font-size:12.5px;line-height:1.7;white-space:pre-wrap">====================================================
+1) dB 换算：sigma^2 = 10^(-SNR_dB/10)   （算法 1-2）
+====================================================
+  SNR =  0 dB  -&gt;  sigma^2 = 1.0000
+  SNR =  3 dB  -&gt;  sigma^2 = 0.5012
+  SNR = 10 dB  -&gt;  sigma^2 = 0.1000
+  SNR = 20 dB  -&gt;  sigma^2 = 0.0100
+
+====================================================
+2) 功率归一化手算验证（算法 1-1，正文 [3,4] 例子）
+====================================================
+  原始符号 [3. 4.]  -&gt;  平均功率 12.50（不是 1）
+  RMS = sqrt(12.50) = 3.5355
+  归一后 [0.849 1.131]  -&gt;  平均功率 1.0000（=1 ✓）
+
+====================================================
+3) AWGN 实测：造 100 万个噪声点，实测功率对得上理论吗
+====================================================
+  SNR=10 dB -&gt; 理论 sigma^2 = 0.1
+  实测噪声平均功率 = 0.1001   （大数定律：样本够多就贴理论）
+
+====================================================
+4) 瑞利幅度：两个独立高斯合成（算法 1-3）
+====================================================
+  E[|h|^2] = 0.9989   （理论 = 1，所以 σ² 换算不用改）
+  最小的 |h| = 0.0002   （存在深衰落：|h| 接近 0，均衡时噪声被放大 -&gt; 这就是代价）
+  E[h] = 0.8859 （理论 sqrt(pi)/2 = 0.8862）
+  P(h&lt;0.1) = 0.0099 （理论 1-exp(-0.01) = 0.0100）
+</div>
+  </details>
+  <div class="callout tip"><span class="co-title">💡 建议自己再改三处玩玩</span>
+  ① 把种子 42 改成 7，输出会变但四组结论不变（体会「固定种子=可复现」）；② 在第 1 段的列表里加一个 30，看 σ² 变成 0.001（+10dB=÷10 又见一次）；③ 把第 3 段的 100 万改成 100，实测功率不再贴 0.1（大数定律需要样本量）。</div>
+  <div class="callout warn"><span class="co-title">🤝 协议边界说明</span>
+  跑码件（demos/ 里的玩具脚本）是<strong>教学演示，AI 写给你跑</strong>，跟 attention_demo.py 一个性质；而 <code>channel.py / model_v0.py / train_v0.py</code> 是<strong>项目核心代码，必须你亲手写</strong>——AI 只 review。这条线写进了《复试项目方案》§5，网页只是提醒你别搞混。</div>
+
+  <div class="callout tip"><span class="co-title">📦 本章产出验收</span>
+  <code>channel.py</code> 三个函数/类（power_norm + AWGNChannel + RayleighChannel）约 30 行。写完后自检：<strong>关掉本页，只凭算法卡 1-1~1-3 的公式，能不能默写出来？</strong>能 → 进第 2 章；不能 → 回 1.7/1.8/1.9 把手算重做一遍。</div>
+
+  <div class="quiz">
+    <div class="quiz-head">第 1 章自测</div>
+    <details><summary>(B, 3, 32, 32) 从左到右每个数是什么？一共多少个数值？</summary>
+      <div class="ans">B=batch 一次几张图、3=RGB 通道、32×32=高×宽。一张图 3×32×32=3072 个数，B 张就是 B×3072 个。这题不过关别进第 2 章。</div></details>
+    <details><summary>SNR=6dB 时噪声功率是信号的几分之几？SNR=-10dB 呢？</summary>
+      <div class="ans">6dB：10^(-0.6)≈0.25（两个 3dB：×2×2）；-10dB：10^(1)=10 倍——信号功率只有噪声十分之一；本页滑块范围 0–20 dB，未覆盖这个值。</div></details>
+    <details><summary>「σ² 叫噪声功率」和概率课的「方差」是什么关系？</summary>
+      <div class="ans">同一个东西。高斯、均值 0 时 E[n²]=Var(n)=σ²：通信课管 E[n²] 叫平均功率，概率课管它叫方差。1Ω 电阻上 v² 就是功率，所以「平方的平均」=「平均功率」。</div></details>
+    <details><summary>np.mean(decoded != bits) 为什么算出来是误码率？</summary>
+      <div class="ans">decoded != bits 是布尔数组（错=True），布尔在 NumPy 里当 0/1 用，mean 就是 True 的占比 = 错的比例。紧凑但常用，值得单独记住。</div></details>
+    <details><summary>SNR = 3 dB 时 σ² 是多少？SNR = -3 dB 呢？</summary>
+      <div class="ans">10^(3/10) ≈ 2 → σ² = 1/2 = 0.5；10^(-3/10) ≈ 0.501 → σ² ≈ 1.99（噪声功率约为信号 2 倍）。负 dB 在 JSCC 实验里是常客（低 SNR 正是主战场），别觉得奇怪。</div></details>
+    <details><summary>为什么 BPSK 有「判决」这一步，JSCC 没有？</summary>
+      <div class="ans">BPSK 的符号只有 ±1 两个合法值，判决=挑最近的那个，一旦判错信息全丢（硬损失）；JSCC 的符号是连续值，接收端不猜「是哪个」，而是让解码器带着噪声信息去做软恢复——错多少修多少，这正是平滑退化的来源。</div></details>
+    <details><summary>功率归一化去掉会怎样？模型不也能训练吗？</summary>
+      <div class="ans">能训练，但 SNR 就失去意义了：网络会学会把符号幅度放大来「压制」噪声（等效作弊），不同 k/n、不同训练轮次之间完全不可比，PSNR-SNR 曲线没法画。功率约束是让实验「讲道理」的锚。</div></details>
+    <details><summary>瑞利信道里「理想 CSI 均衡」的假设去掉会怎样？</summary>
+      <div class="ans">y/h 做不了，解码器必须自己从信号里估计 h（盲均衡）或同时估计信道与内容——也可以利用导频估计 h，但要计入开销与估计误差。本页理想 CSI 是明确的教学简化，并不意味着所有论文采用相同假设。</div></details>
+  </div>
+</section>
+
+<!-- ================= CH2 CNN 版 V0 ================= -->
+<section class="chapter" id="ch2">
+  <h2><span class="chno">第 2 章</span>CNN 版 JSCC（V0）：编码器 · 解码器 · 训练循环</h2>
+
+  <div class="callout summary"><span class="co-title">📌 本章结论</span>
+  把 V0 的全部代码写成 4 块：编码器（图→256 个符号）、SNR 注入（告诉解码端信道多差）、解码器（符号→图）、训练循环。全部是「卷积下采样 + 全连接 + 对称还原」这一个套路的组合。<strong>学完本章 + 第 1 章 = 你已经能独立写出 V0 的 150 行核心代码</strong>，第 5 章限时验收。</div>
+
+  <h3>2.0 PyTorch 先修二：本章代码的全部前置（五个小节）</h3>
+  <p>你在 transformer-course-web 2.0 节学过 Tensor/forward/Linear/unsqueeze/broadcast——那是「读懂别人代码」的量级。本章要<strong>自己从零写</strong>，所以前置加码成五小节，每节都是后面代码卡里真实出现的东西。先给一张总索引表（读卡时回来查），然后逐节展开：</p>
+  <table class="map-table">
+    <tr><th>API</th><th>干什么</th><th>详讲</th></tr>
+    <tr><td class="mono">nn.Conv2d(in, out, k, stride, padding)</td><td>2D 卷积：stride=2 时输出尺寸减半</td><td><a href="#ch2-conv">2.2</a>（你在 YOLO 源码 cv1/cv2 见过）</td></tr>
+    <tr><td class="mono">nn.ConvTranspose2d(同上)</td><td>转置卷积：可学习的放大，4/2/1 组合 = 尺寸×2</td><td><a href="#ch2-conv">2.2</a>（全新，专节讲）</td></tr>
+    <tr><td class="mono">nn.Sequential / nn.Sigmoid()</td><td>零件串联盒 / 压到 (0,1) 的限幅器</td><td><a href="#ch2-module">2.0.1 / 2.2</a></td></tr>
+    <tr><td class="mono">reshape(-1) / unsqueeze / expand / cat / keepdim</td><td>形状操作五件套</td><td><a href="#ch2-shapes">2.0.2</a>（含一个「不报错却悄悄错」的大坑）</td></tr>
+    <tr><td class="mono">Dataset / DataLoader / ToTensor</td><td>数据怎么进网络</td><td><a href="#ch2-data">2.0.3</a></td></tr>
+    <tr><td class="mono">zero_grad / backward / step</td><td>训练五连</td><td><a href="#ch2-loop">2.0.4</a></td></tr>
+    <tr><td class="mono">.to(DEVICE) / loss.item() / f-string</td><td>设备与输出</td><td><a href="#ch2-dev">2.0.5</a></td></tr>
+  </table>
+
+  <h4 id="ch2-module">2.0.1 nn.Module：自己组装一个网络（从零）</h4>
+  <p>先看一个能跑的最小玩具——「输入 3 个数 → 输出 1 个数」的模块，每个部件标了编号：</p>
+  <div class="code-card">
+    <div class="cc-head"><span class="cc-file">nn.Module 最小样例</span><span class="cc-desc">V0 的编码器/解码器就是把这个骨架放大，结构一模一样</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">import torch.nn as nn
+
+class ToyNet(nn.Module):              # ① 继承 nn.Module
+    def __init__(self):               # ② 构造函数：摆零件
+        super().__init__()            # ③ 先让父类完成初始化（必须！）
+        self.fc = nn.Linear(3, 1)     # ④ 摆一个零件（可训练）
+
+    def forward(self, x):             # ⑤ 定义数据怎么流
+        return self.fc(x)             #    零件串起来
+
+net = ToyNet()                        # ⑥ 实例化（此刻 fc 的权重已随机初始化）
+print(list(net.parameters()))         # ⑦ fc 的权重和偏置自动登记在案</pre>
+    <script class="cc-notes" type="application/json">{"1":"class 语法你 YOLO 网页见过；继承 nn.Module 后才享受 PyTorch 的全套机制（参数登记、.to() 搬 GPU、训练钩子）","2":"__init__ 在实例化时执行一次，任务只有一件事：把零件摆好存到 self 上","3":"super().__init__() = 先跑父类的初始化，搭好「参数记账本」。忘了它，第④行登记参数时直接报错——这是新手第一高频错误","4":"self.fc = nn.Linear(...) 一赋值，PyTorch 自动把这个 Linear 的权重登记进本模块的参数清单——不需要你手工报备","5":"forward 不叫 forward 也行但别这么干；所有工具（训练循环、.to()）都按 forward 这个名字调它","6":"实例化 ≠ 训练；此时权重是随机数，等着被梯度更新","7":"parameters() 返回所有登记过的参数——第 2.7 行训练循环里 optimizer 拿的就是它"}</script>
+  </div>
+  <div class="callout analogy"><span class="co-title">🎓 C 类比</span>
+  一个 nn.Module ≈ 一个 struct：<code>__init__</code> 是 malloc+成员初始化，<code>self</code> 就是 this 指针，<code>forward</code> 是对结构体的操作函数，<code>super().__init__()</code> 是先调父类的构造函数（C 里没有继承，但「先初始化基座再填自己的成员」的心智模型一样）。<code>nn.Sequential(a, b, c)</code> 则是一个「零件串联盒」：把几个零件排进盒子，forward 时自动依次过——等价于手写 <code>return c(b(a(x)))</code>。</div>
+
+  <h4 id="ch2-shapes">2.0.2 形状操作五件套（含一个无声错误）</h4>
+  <p>第 1 章你已经会 unsqueeze 和广播。本章代码卡新增五个操作，全部先在跑码件里玩过（<code>demos/demo_ch2_tensor_toys.py</code>，2.9 节有完整输出）。这里把<strong>行为规则</strong>逐个钉死：</p>
+  <table class="kv-table">
+    <tr><th>操作</th><th>规则</th><th>本章哪里用</th></tr>
+    <tr><td class="rowhead">x.reshape(2, -1)</td><td>重排成指定形状；<strong>-1 = 这一维自动算</strong>（总数÷其余维）。数据不动，只换「怎么读」</td><td>编码器 4096、解码器 reshape 回 (B,256,4,4)</td></tr>
+    <tr><td class="rowhead">feat.unsqueeze(0)</td><td>在指定位置插一根长度为 1 的轴：(2,)→(1,2)</td><td>SNR 特征拼进 batch</td></tr>
+    <tr><td class="rowhead">fb.expand(8, -1)</td><td>把 size=1 的轴复制放大成 8；<strong>-1 = 这维保持不动</strong>。不复制内存（共享），只读安全</td><td>同上：(1,2)→(8,2)</td></tr>
+    <tr><td class="rowhead">torch.cat([a, b], dim=1)</td><td>沿指定轴拼接：除 dim 外其余维必须同形</td><td>(B,k) 拼 (B,2) → (B,k+2)</td></tr>
+    <tr><td class="rowhead">mean(dim=1, keepdim=True)</td><td>dim=1 = 沿第 1 轴压掉；<strong>keepdim=True = 被压的轴留一根 size=1 的</strong>，方便下一步广播</td><td>功率归一化（算法 1-1）</td></tr>
+  </table>
+  <div class="callout warn"><span class="co-title">⚠️ 广播陷阱：忘写 keepdim，可能报错也可能静默算错</span>
+  功率归一化里如果写成 <code>torch.mean(s**2, dim=1)</code>（丢掉 keepdim），得到 (B,)。<strong>当 B=k 时，(B,k) ÷ (B,) 恰好能广播，因此不报错</strong>——PyTorch 按列广播，第一列全除以第 0 个样本的 RMS、第二列全除以第 1 个样本的 RMS……每一行混着别的样本的功率，<strong>结果错得无声无息</strong>。跑码件第 4 节实测：按“除均方值”这个广播玩具，该得 [0.24, 0.32] 的一行变成了 [0.24, 1.6]（这里故意未开根号，实际 power_norm 除的是 RMS）。「报错的坑」好修，「不报错的坑」靠实验对照才抓得住——一般 B 与 k 不同且都大于 1 时会报尺寸不匹配；B=1 时又可能碰巧算对。所以要验证一般形状并保留 (B,1)，不能只试一个样本。</div>
+  <p><strong>dim= 到底怎么数</strong>：张量的轴从外往里数 0,1,2……(B,3,32,32) 的 dim=0 是「批」、dim=1 是「通道」。mean(dim=1) = 把通道轴压掉（对每个位置跨通道求平均）。压掉的轴默认消失，keepdim 让它以 size=1 留下来。</p>
+
+  <h4 id="ch2-data">2.0.3 数据怎么进网络：Dataset / DataLoader / ToTensor</h4>
+  <p>训练循环里 <code>for x, _ in loader</code> 这一行背后是三个角色，各自从零讲：</p>
+  <table class="kv-table">
+    <tr><th>角色</th><th>人话</th><th>C 类比</th></tr>
+    <tr><td class="rowhead">Dataset</td><td>「装数据的盒子」：能回答两件事——一共多少条（__len__）、按下标取第 i 条（__getitem__）</td><td>数组 + 下标取元素</td></tr>
+    <tr><td class="rowhead">DataLoader</td><td>「搓批机器」：从盒子里按 batch_size 抓一把、（可选）洗牌、搓成一批吐出来</td><td>for 循环 + 缓冲区</td></tr>
+    <tr><td class="rowhead">transforms.ToTensor()</td><td>「格式转换员」：PIL 图片 → float 张量，顺手做两件事——<strong>÷255 归到 [0,1]</strong>、<strong>HWC 转 CHW</strong></td><td>类型转换 + 内存重排</td></tr>
+  </table>
+  <p>CIFAR-10 是标准数据集，<strong>不用手工下载整理</strong>，一行自动搞定（首次运行联网下载约 170MB 到 data/ 文件夹，之后就离线读）：</p>
+  <div class="code-card">
+    <div class="cc-head"><span class="cc-file">数据加载三行</span><span class="cc-desc">对应 train_v0.py 的 7–13 行</span></div>
+    <pre data-lang="python">tf = transforms.ToTensor()
+train_set = datasets.CIFAR10("data", train=True, download=True, transform=tf)
+loader = DataLoader(train_set, batch_size=256, shuffle=True, num_workers=0)</pre>
+  </div>
+  <p><strong>三个词辨析</strong>（新手必混，用数字钉死）：1 个 <strong>epoch</strong> = 全部 5 万张图各看一遍；1 个 <strong>batch</strong> = 一次前向喂的 256 张；1 个 <strong>iteration</strong> = 搓一批并更新一次参数。5 万÷256 → <strong>1 epoch = 196 次 iteration</strong>（最后一批只有 80 张，凑不满就凑合用）。跑 50 epoch = 9800 次更新。</p>
+  <div class="callout warn"><span class="co-title">⚠️ Windows 专属坑：num_workers</span>
+  <code>num_workers=2</code> 表示两个后台进程搬运数据（主进程专心算）。但 Windows 的多进程要求主脚本「被保护」——train_v0.py 里所有执行代码必须放在 <code>if __name__ == "__main__":</code> 里面，否则报 <code>RuntimeError: freeze_support...</code>。两种解法：加这个保护头（推荐，养成习惯），或先把 num_workers 改 0（慢但稳）。</div>
+
+  <h4 id="ch2-loop">2.0.4 训练五连：每一步在干什么</h4>
+  <div class="code-card">
+    <div class="cc-head"><span class="cc-file">训练五连（骨架）</span><span class="cc-desc">顺序固定，一个都不能少；下面逐个拆</span></div>
+    <pre data-lang="python">x_hat = model(x, snr_db)   # ① 前向：算出预测
+loss = loss_fn(x_hat, x)   # ② 算误差（一个标量张量）
+opt.zero_grad()            # ③ 清空梯度账本
+loss.backward()            # ④ 反向传播：算出每个参数的梯度
+opt.step()                 # ⑤ 每个参数 -= lr × 梯度</pre>
+  </div>
+  <ol class="steps">
+    <li><strong>① 前向</strong>：数据流过 2.6 组装的流水线，得到重建图 x̂。</li>
+    <li><strong>② loss</strong>：MSE 逐像素差方平均，得到一个标量张量。注意它<strong>不是普通数字</strong>，而是带着整条计算路径的「活账本」——第 ④ 步全靠它记账。</li>
+    <li><strong>③ zero_grad</strong>：PyTorch 的梯度默认<strong>累加</strong>（你在 bp_demo 推过的机制：多路径梯度汇总就是这么实现的）。不清账，本批梯度会叠上上一批的——模型越训越疯且查不出原因。所以每批开头先清。</li>
+    <li><strong>④ backward</strong>：从 loss 沿计算图反向走一遍，给每个参数算出「往哪边挪能让 loss 变小」（= 梯度）。你 YOLO 文档第 6 章手推过两层网络的反传，这里只是交给框架自动做。</li>
+    <li><strong>⑤ step</strong>：所有登记过的参数各自挪一小步：θ ← θ − lr × 梯度。lr=1e-3 就是步长。</li>
+  </ol>
+  <p>两个附属问题：<code>loss.item()</code> 把标量张量变回普通 Python 数（只取数值、甩掉计算图——统计用，省显存）；<code>model.train()</code> / <code>model.eval()</code> 是训练/推理模式开关——本模型没有 BN 和 Dropout，不写也能跑，但建议写上养成习惯（YOLO 里有 BN，忘了切 eval 会出诡异结果）。</p>
+
+  <h4 id="ch2-dev">2.0.5 设备与输出：.to(DEVICE) 和 f-string</h4>
+  <p><strong>设备</strong>：CPU 和 GPU 是两块独立内存，张量和模型必须待在同一块上才能运算。<code>DEVICE = "cuda" if torch.cuda.is_available() else "cpu"</code> 检测后，<code>model.to(DEVICE)</code> 和每个 batch 的 <code>x.to(DEVICE)</code> 把两者搬到同侧。忘搬其中一边，报错形如 <code>Expected all tensors to be on the same device</code>——看到它就回来查这节。SNR 特征是现造的小张量（CPU 出身），所以 2.4 代码卡里那句 <code>.to(s.device)</code> 是必备保险。</p>
+  <p><strong>f-string 拆解</strong>（训练日志那行）：<code>f"epoch {epoch}  loss {total / len(loader):.5f}"</code> —— 引号前的 f 表示「花括号里是变量」：<code>{epoch}</code> 直接填值；<code>{total / len(loader):.5f}</code> 花括号里可以是表达式，<code>:.5f</code> 表示格式化成小数点后 5 位。拆成普通写法 = <code>"epoch " + str(epoch) + " loss " + str(round(avg, 5))</code>——f-string 只是省事，不是新语言。</p>
+
+  <h3>2.1 自编码器：从零定义</h3>
+  <p><strong>自编码器（autoencoder）</strong>= 一个「压缩-还原」网络：<strong>编码器</strong>把输入压成一个低维表示（瓶颈），<strong>解码器</strong>从瓶颈还原输入，训练目标 = 还原得像不像（重建误差）。JSCC 的巧妙之处：把<strong>信道插在瓶颈处</strong>——压缩后的符号必须先扛过噪声，才能被还原。于是网络被迫学会「把重要的信息编码得更抗噪」。这就是「语义」长出来的机制。</p>
+  <div class="callout analogy"><span class="co-title">🎓 类比：传话游戏 But 训练过</span>
+  3072 个像素值 →（编码器）→ 256 个数 →（信道：被噪声污染）→（解码器）→ 3072 个像素值。就像让一个人用 256 个词描述一张图，另一个人照着画回来——中间传话还会走样。训练 = 反复练习，让「描述的方式」尽量抗走样。</div>
+
+  <h3 id="ch2-conv">2.2 卷积与转置卷积：缩小靠前者，放大靠后者</h3>
+  <p><strong>普通卷积（缩小方向）</strong>——你在 YOLO 源码的 cv1/cv2 里天天见的 <code>nn.Conv2d</code>，参数五件套 <code>(in_ch, out_ch, kernel, stride, padding)</code>：kernel×kernel 的窗口在图上滑动，每停一处做一次加权和输出一个数。本章只用三个事实：</p>
+  <ul>
+    <li><strong>stride=2</strong> = 窗口每次跳 2 格 → 输出边长减半（32→16→8→4），同时<strong>通道数由 out_ch 说了算</strong>（3→64→128→256）——空间变小、通道变多，「空间换特征」；</li>
+    <li><strong>padding=1</strong> = 图四周补一圈 0，配合 kernel=4 才能让「减半」除得整整齐齐（4/2/1 组合的另一半）；</li>
+    <li>窗口里的加权和系数<strong>全是可训练参数</strong>——YOLO 文档讲过的卷积三层账在这里原样成立。</li>
+  </ul>
+  <p><strong>转置卷积（放大方向）</strong>——解码器要把 4×4 放回 32×32，需要「放大器」。先看固定的放大怎么做：最近邻插值——每个像素复制成 2×2 四份，4×4 立刻变 8×8，但它是个<strong>死规则，没有参数可学</strong>。转置卷积 = 把这个放大器做成<strong>可学习的</strong>：</p>
+  <div class="callout analogy"><span class="co-title">🎓 直觉：撒胡椒面再叠起来</span>
+  想象每个输入像素变成一个 kernel×kernel 的小图样（权重可训练，相当于「这个像素该怎样影响放大的邻域」），按 stride 间隔撒到一张大画布上，<strong>重叠位置的值相加</strong>。stride=2 时相邻小图样隔 2 格撒，重叠处相加——输出自然变大。数学上它是卷积的转置操作（梯度反传时的角色互换），但<strong>写代码你只需要记住一件事</strong>：</div>
+  <div class="callout tip"><span class="co-title">💡 只需记住的口诀</span>
+  <code>nn.ConvTranspose2d(in_ch, out_ch, kernel=4, stride=2, padding=1)</code> 这组参数 = <strong>空间尺寸 ×2</strong>，跟卷积那组 4/2/1 减半正好互为镜像。4×4→8×8→16×16→32×32，三次翻倍回到原图。为什么是 4/2/1？代数上 输出 = (输入−1)×stride − 2×padding + kernel，代入 (4,2,1)：(n−1)×2−2+n = n+2……不必背推导，记住组合+会画「输入尺寸→输出尺寸」对账表就够用，复试也不会考转置卷积的数学推导。最后一层接 <code>nn.Sigmoid()</code> 把输出压到 (0,1)——和输入像素的值域咬合（下一节细讲这个坑）。</div>
+
+  <h3>2.3 编码器：3072 维 → k 个符号</h3>
+  <div class="formula-card">
+    <div class="f-head"><span class="f-tag">算法 2-1 · 编码器前向</span><span class="f-name">三次卷积下采样 + 展平 + 全连接（k=256 演示）</span></div>
+    <table class="kv-table">
+      <tr><th>步骤</th><th>操作</th><th>输出形状</th><th>说明</th></tr>
+      <tr><td class="rowhead">输入</td><td>—</td><td class="mono">(B, 3, 32, 32)</td><td>3 通道（RGB）32×32 图</td></tr>
+      <tr><td class="rowhead">Conv1</td><td>3→64, k4 s2 p1</td><td class="mono">(B, 64, 16, 16)</td><td>尺寸减半，通道升到 64</td></tr>
+      <tr><td class="rowhead">Conv2</td><td>64→128, k4 s2 p1</td><td class="mono">(B, 128, 8, 8)</td><td>再减半</td></tr>
+      <tr><td class="rowhead">Conv3</td><td>128→256, k4 s2 p1</td><td class="mono">(B, 256, 4, 4)</td><td>4×4 的小图，但 256 通道</td></tr>
+      <tr><td class="rowhead">展平</td><td>reshape</td><td class="mono">(B, 4096)</td><td>256×4×4 = 4096</td></tr>
+      <tr><td class="rowhead">全连接</td><td>4096 → k</td><td class="mono">(B, 256)</td><td><strong>压出 256 个信道符号</strong></td></tr>
+      <tr><td class="rowhead">归一化</td><td>算法 1-1</td><td class="mono">(B, 256)</td><td>功率归一，出模块</td></tr>
+    </table>
+    <p style="margin:8px 0 0;font-size:13.5px;color:var(--ink-2)">压缩率对账：输入 3072 个值（32×32×3）→ 输出 256 个符号，维度比约 12:1（不是字节比）；实数带宽比 k/n = 256/3072 = 1/12；每空间像素预算 k/(HW)=1/4。改 k 就改压缩率——这就是后面图4 扫描的旋钮。</p>
+  </div>
+
+  <div class="code-card notes-on" id="code-enc">
+    <div class="cc-head"><span class="cc-file">model_v0.py · EncoderV0</span><span class="cc-desc">卷积堆叠全程用 Sequential，forward 只有三步</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">class EncoderV0(nn.Module):
+    def __init__(self, k):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(3, 64, 4, stride=2, padding=1),    # → (B,64,16,16)
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, 4, stride=2, padding=1),  # → (B,128,8,8)
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 256, 4, stride=2, padding=1), # → (B,256,4,4)
+            nn.ReLU(inplace=True),
+        )
+        self.fc = nn.Linear(256 * 4 * 4, k)
+
+    def forward(self, x):
+        h = self.conv(x)                # (B,256,4,4)
+        h = h.reshape(h.size(0), -1)    # (B,4096)
+        return self.fc(h)               # (B,k)</pre>
+    <script class="cc-notes" type="application/json">{"4": "Conv2d 参数依次为输入通道、输出通道、卷积核，stride=2、padding=1 使尺寸减半。", "5": "ReLU 把负值截成 0。", "11": "卷积输出 256×4×4=4096 个数，所以全连接输入长度是 4096。", "14": "卷积输出 (B,256,4,4)。", "15": "保留 batch，把其余轴展平成 4096。", "16": "得到 (B,k)，尚未归一化。"}</script>
+  </div>
+
+  <h3>2.4 SNR 注入：让解码端知道信道有多差</h3>
+  <p>人在听含糊的录音时会自动「更用力猜」；解码器面对被噪声污染的符号，恢复策略也应该随噪声强度变化——所以要把 SNR <strong>作为一个输入告诉解码器</strong>。本教程采用一种简单设计：把线性 SNR 的倒数和它的对数拼进解码器输入。两者由同一个 SNR 算出，不增加独立信息，也不是所有 JSCC 论文的标准接口。这里假设接收端已知该 SNR。</p>
+
+  <div class="formula-card">
+    <div class="f-head"><span class="f-tag">算法 2-2 · SNR 特征</span><span class="f-name">两个标量：线性域倒数 + 对数域（量纲互补）</span></div>
+    <div class="math-display">\text{feat} = \left[\, 10^{-\text{SNR}_{\text{dB}}/10},\; \log_{10}\!\big(10^{-\text{SNR}_{\text{dB}}/10}\big) \,\right] \in \mathbb{R}^2</div>
+    <p style="margin:4px 0 0;font-size:13.5px;color:var(--ink-2)">SNR=10dB → [0.1, −1]。为什么两个都要？线性倒数给「噪声大小」的绝对量级，对数给「跨数量级」的等距感（5dB 和 10dB 在对数域一样远）——网络对两种感受都要用。手算：SNR=0dB → [1, 0]；SNR=20dB → [0.01, −2]。</p>
+  </div>
+
+  <div class="code-card notes-on" id="code-snr">
+    <div class="cc-head"><span class="cc-file">model_v0.py · snr_features</span><span class="cc-desc">8 行。unsqueeze/expand 是广播的第二课，逐行看</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">import math
+
+def snr_features(snr_db):
+    inv = 10 ** (-snr_db / 10)                    # 标量 1/SNR（线性）
+    feat = torch.tensor([inv, math.log10(inv + 1e-8)])
+    return feat                                    # (2,)
+
+# 拼到 batch 里的用法（在解码器 forward 里）：
+#   feat = snr_features(snr_db).to(s.device)       # (2,)
+#   feat = feat.unsqueeze(0).expand(s.size(0), -1) # (B,2)
+#   z = torch.cat([s, feat], dim=1)                # (B, k+2)</pre>
+    <script class="cc-notes" type="application/json">{"3": "噪声方差对应的特征；假定发送功率为 1。", "4": "两个特征都来自同一个标量 SNR；这里造 CPU 张量。", "5": "返回形状 (2,)。", "8": "实际使用时移到符号所在设备。", "9": "先增加 batch 轴，再 expand 成 (B,2) 的共享视图，不是复制数据。", "10": "沿特征轴拼接后为 (B,k+2)。"}</script>
+  </div>
+
+  <h3>2.5 解码器：从被污染的符号还原图像</h3>
+  <div class="formula-card">
+    <div class="f-head"><span class="f-tag">算法 2-3 · 解码器前向</span><span class="f-name">编码器的镜像：全连接 + 三次转置卷积</span></div>
+    <table class="kv-table">
+      <tr><th>步骤</th><th>操作</th><th>输出形状</th></tr>
+      <tr><td class="rowhead">拼接 SNR</td><td>cat(s, feat)</td><td class="mono">(B, k+2)</td></tr>
+      <tr><td class="rowhead">全连接</td><td>k+2 → 4096</td><td class="mono">(B, 4096)</td></tr>
+      <tr><td class="rowhead">重排</td><td>reshape</td><td class="mono">(B, 256, 4, 4)</td></tr>
+      <tr><td class="rowhead">DeConv×2</td><td>256→128→64</td><td class="mono">(B,64,16,16)</td></tr>
+      <tr><td class="rowhead">DeConv3+Sigmoid</td><td>64→3</td><td class="mono">(B, 3, 32, 32)</td></tr>
+    </table>
+  </div>
+
+  <div class="code-card notes-on" id="code-dec">
+    <div class="cc-head"><span class="cc-file">model_v0.py · DecoderV0</span><span class="cc-desc">与编码器逐层对称。最后一层 Sigmoid 把值域压回 (0,1)</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">class DecoderV0(nn.Module):
+    def __init__(self, k):
+        super().__init__()
+        self.fc = nn.Linear(k + 2, 256 * 4 * 4)
+        self.deconv = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, 4, stride=2, padding=1), # → (B,128,8,8)
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),  # → (B,64,16,16)
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(64, 3, 4, stride=2, padding=1),    # → (B,3,32,32)
+            nn.Sigmoid(),
+        )
+
+    def forward(self, s, snr_db):
+        feat = snr_features(snr_db).to(s.device)
+        feat = feat.unsqueeze(0).expand(s.size(0), -1)
+        z = torch.cat([s, feat], dim=1)          # (B,k+2)
+        h = self.fc(z)                            # (B,4096)
+        h = h.reshape(-1, 256, 4, 4)              # (B,256,4,4)
+        return self.deconv(h)                     # (B,3,32,32)</pre>
+    <script class="cc-notes" type="application/json">{"3": "输入是 k 个接收数加 2 个 SNR 特征。", "14": "把 SNR 特征移到接收张量的设备。", "15": "(2,)→(1,2)→(B,2)，expand 是视图。", "16": "每张图一行，拼成 k+2 个数。", "17": "全连接恢复成 4096 维。", "18": "4096=256×4×4，-1 自动算出 B。", "19": "三次转置卷积把空间尺寸 4→8→16→32；末尾 Sigmoid 输出 (0,1)。"}</script>
+  </div>
+
+  <div class="callout warn"><span class="co-title">⚠️ 高频坑：两头值域咬合</span>
+  torchvision 的 <code>ToTensor()</code> 把 PIL 图变成 [0,1] 浮点张量——<strong>不要再加 Normalize</strong>（那会把值域挪到 ±2 左右，而 Sigmoid 输出永远在 (0,1)，loss 降不下去且你查不出哪错了）。你 YOLO 教程第 4 章见过 ultralytics 的归一化是 /255，同一个道理：先确认两头范围一致。</div>
+
+  <h3>2.6 整机组装：forward = 五步流水线</h3><div class="callout tip"><span class="co-title">这些代码卡怎样放在一起</span>卡片展示学习片段，不是可以逐个独立执行的脚本。信道文件需导入 torch 和 torch.nn；模型文件需导入 torch、torch.nn、math，以及你写好的 power_norm/AWGNChannel；训练文件再导入你写好的 JSCC_V0。同文件学习时先执行定义，再创建模型。完整工程由你组装，下面不替你生成项目文件。</div>
+  <div class="code-card notes-on" id="code-model">
+    <div class="cc-head"><span class="cc-file">model_v0.py · JSCC_V0</span><span class="cc-desc">把第 1、2 章的所有零件串起来——这就是交互 1 那条流水线</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">class JSCC_V0(nn.Module):
+    def __init__(self, k=256):
+        super().__init__()
+        self.enc = EncoderV0(k)
+        self.dec = DecoderV0(k)
+        self.awgn = AWGNChannel()
+
+    def forward(self, x, snr_db):
+        s = self.enc(x)            # ① 编码 (B,3,32,32)→(B,k)
+        s = power_norm(s)          # ② 功率归一化
+        y = self.awgn(s, snr_db)   # ③ 过信道 y=s+n
+        return self.dec(y, snr_db) # ④+⑤ SNR注入 + 解码 →(B,3,32,32)</pre>
+    <script class="cc-notes" type="application/json">{"1": "k=256 计实数符号，实数带宽比 256/3072=1/12。", "7": "forward 的输入是图像与标量 SNR。", "8": "编码器输出 (B,k)。", "9": "每张图分别归一化。", "10": "噪声是网络计算图中间的一环。", "11": "返回重建图，训练时与原图算 MSE。"}</script>
+  </div>
+
+  <h3>2.7 训练循环：五件套跑起来</h3>
+  <div class="formula-card">
+    <div class="f-head"><span class="f-tag">算法 2-4 · 训练一步</span><span class="f-name">每个 batch 固定五连：forward → loss → 清零 → 反传 → 更新</span></div>
+    <div class="math-display">\mathcal{L} = \text{MSE}(\hat{x}, x) = \dfrac{1}{N}\textstyle\sum_i (\hat{x}_i - x_i)^2</div>
+    <p style="margin:4px 0 0;font-size:13.5px;color:var(--ink-2)">重建任务的损失就是「逐像素差方平均」。你在 YOLO 源码里见过不同版本的检测损失组合（不可把旧版含 DFL 的组合套给所有 YOLO 版本）——JSCC 只有一项，简单得多。梯度会从 loss 一路穿过解码器、穿过<strong>加噪那一行</strong>（每次采一个噪声样本后对计算图求导，跨多次采样近似期望梯度；不是精确计算噪声期望）、流回编码器——「抗噪的编码方式」就是被这个梯度逼出来的。</p>
+  </div>
+
+  <div class="code-card notes-on" id="code-train">
+    <div class="cc-head"><span class="cc-file">train_v0.py</span><span class="cc-desc">项目内片段：先自行定义/导入 JSCC_V0，再固定 10dB 训练</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div>
+    <pre data-lang="python">import torch
+import torch.nn as nn
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+tf = transforms.ToTensor()                    # 只做 [0,1] 归一化，不加 Normalize！
+train_set = datasets.CIFAR10("data", train=True, download=True, transform=tf)
+loader = DataLoader(train_set, batch_size=256, shuffle=True, num_workers=0)
+
+model = JSCC_V0(k=256).to(DEVICE)
+opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+loss_fn = nn.MSELoss()
+
+for epoch in range(50):
+    total = 0.0
+    for x, _ in loader:                       # 标签用不上，JSCC 是无监督重建
+        x = x.to(DEVICE)
+        snr_db = 10.0                         # 先固定；第 3 章改成随机采样
+        x_hat = model(x, snr_db)              # forward
+        loss = loss_fn(x_hat, x)              # 重建误差
+        opt.zero_grad()                       # 清上一步的梯度
+        loss.backward()                       # 反向传播
+        opt.step()                            # 更新参数
+        total += loss.item()
+    print(f"epoch {epoch}  loss {total / len(loader):.5f}")</pre>
+    <script class="cc-notes" type="application/json">{"7": "只把像素归一到 [0,1]，与解码器范围配套。", "8": "此处会下载 CIFAR-10，需要网络；短实验不要把测试集用于调参。", "9": "Windows 教学默认 num_workers=0；多进程需要 main 入口保护。", "11": "此片段依赖前面自行组装或导入的 JSCC_V0。", "18": "图像移到设备。", "19": "本例每批固定 10 dB；3.1 给出随机训练的局部替换。", "20": "前向得到重建图。", "21": "重建目标是 x，不是分类标签。", "22": "清梯度，避免上一批残留。", "23": "反向计算本次噪声样本下的梯度。", "24": "更新参数。", "25": "累计批 loss，仅作训练监控；测试 PSNR 应逐图统计。", "26": "这里输出各批 loss 的平均；最后一批较小时不是严格逐图均值。"}</script>
+  </div>
+
+  <div class="callout tip"><span class="co-title">💡 跑通判据（W1 的验收标准）</span>
+  先用小批图像验证形状、有限的 loss 与梯度，再做短训练观察能否拟合；随后在独立验证集保存重建图与 PSNR。耗时和最终分数取决于设备、实现与训练设置，本页没有跑完整训练，不给未经测量的保证值。未达预期时按第 5 章排查。</div>
+
+  <h3>2.8 形状流水账总表（关卡 2 的默写对象）</h3>
+  <p>选择下面的 k，看发送预算变化时哪些形状跟着变——<strong>k 是唯一联动所有层的旋钮</strong>：</p>
+
+  <div class="viz-panel" id="viz-shapes">
+    <div class="vp-head"><span class="vp-title">交互 3 · V0 形状流水（选择实数符号数 k）</span></div>
+    <div class="vp-body"><svg id="svg-shapes" class="viz-svg"></svg></div>
+    <div class="vp-ctrl">
+      <label>实数符号数 k <select id="shapes-kn"><option value="256">256（k/n=1/12）</option><option value="171">171（k/n≈1/18）</option><option value="85">85（k/n≈1/36）</option><option value="43">43（k/n≈1/71.44）</option></select></label>
+      <span class="viz-note" style="margin:0">卷积层的形状（32→16→8→4）跟 k 无关，变的是全连接两端和解码器输入——构造不同模型时改 k 即可改变这些层的形状；旧检查点不能直接加载到新 k。n=3072=3×32×32，k 按实数使用计数。</span>
+    </div>
+  </div>
+
+  <table class="map-table">
+    <tr><th>#</th><th>阶段</th><th>形状</th><th>出处</th></tr>
+    <tr><td>1</td><td>输入图像 x</td><td class="mono">(B,3,32,32)</td><td>—</td></tr>
+    <tr><td>2</td><td>编码器卷积组</td><td class="mono">(B,256,4,4)</td><td>算法 2-1</td></tr>
+    <tr><td>3</td><td>展平</td><td class="mono">(B,4096)</td><td>算法 2-1</td></tr>
+    <tr><td>4</td><td>全连接 → 原始符号</td><td class="mono">(B,k)</td><td>算法 2-1</td></tr>
+    <tr><td>5</td><td>功率归一化</td><td class="mono">(B,k)</td><td>算法 1-1</td></tr>
+    <tr><td>6</td><td>过信道</td><td class="mono">(B,k)</td><td>算法 1-2/1-3</td></tr>
+    <tr><td>7</td><td>拼 SNR 特征</td><td class="mono">(B,k+2)</td><td>算法 2-2</td></tr>
+    <tr><td>8</td><td>全连接 → 重排</td><td class="mono">(B,256,4,4)</td><td>算法 2-3</td></tr>
+    <tr><td>9</td><td>转置卷积组 + Sigmoid</td><td class="mono">(B,3,32,32)</td><td>算法 2-3</td></tr>
+  </table>
+
+  <h3>2.9 跑码件：写模型之前先把张量操作玩熟</h3>
+  <p>第二个跑码件<strong>不含任何网络代码</strong>（模型必须你自己写，协议在 1.10 说过了）——它只把 2.0.2 表里的五个操作单独拆出来跑给你看，让你写模型时不被形状报错绊住：</p>
+  <div class="code-card">
+    <div class="cc-head"><span class="cc-file">demos/demo_ch2_tensor_toys.py</span><span class="cc-desc">五个操作各一节，跑一遍 30 秒</span></div>
+    <pre data-lang="text">cd jscc-teaching-web/demos
+python demo_ch2_tensor_toys.py</pre>
+  </div>
+  <p>实跑输出（重点看第 4 节的无声错误）：</p>
+  <details class="quiz-item"><summary>点开看完整运行输出</summary>
+    <div class="ans" style="font-family:var(--mono);font-size:12.5px;line-height:1.7;white-space:pre-wrap">====================================================
+1) reshape 与 -1（编码器展平那行）
+====================================================
+  x.shape = (2, 3, 4)
+  x.reshape(2,-1).shape = (2, 12)    <- 自动算出 12
+
+====================================================
+2) unsqueeze / expand（SNR 特征拼进 batch 的两步，算法 2-2）
+====================================================
+  feat.shape = (2,)         (2,)
+  feat.unsqueeze(0).shape = (1, 2)      (1,2)
+  .expand(8,-1).shape = (8, 2)     (8,2)，8 个样本共享同一组特征
+  expand 不复制内存（改 fb8[0] 会牵连全部行），只读用法没问题
+
+====================================================
+3) cat 拼接（k 个符号 + 2 个 SNR 特征 = k+2）
+====================================================
+  cat([s(8,5), feat(8,2)], dim=1).shape = (8, 7)   <- (8,7)，k+2 的来历
+
+====================================================
+4) keepdim（功率归一化那行，算法 1-1）
+====================================================
+  a^2 按行均值  = [12.5, 2.5] shape (2,)  <- 丢了列维
+  加 keepdim   = [[12.5], [2.5]] shape (2, 1)  <- 保住 (2,1)
+  忘了 keepdim 会怎样？(2,2) ÷ (2,) —— 不报错！按列广播：
+  a / ms = [0.24, 1.6, 0.08, 0.8]
+     ^ 第一行本该是 [0.24, 0.32]（都除以 12.5），实际 [0.24, 1.6]（4 被除以了 2.5）
+     悄无声息地错——这就是 power_norm 里 keepdim=True 必须写的原因
+  a / ms_k = [[0.24, 0.32], [0.4, 0.8]]  <- 逐行除，正确
+
+====================================================
+5) 十个 batch 的 epoch 有多大（2.0.3 的 epoch/batch/iteration 辨析）
+====================================================
+  CIFAR-10 训练集 50000 张，batch_size=256
+  -> 1 个 epoch = 196 次 iteration（最后一批只有 80 张）</div>
+  </details>
+
+  <div class="callout tip"><span class="co-title">📦 本章产出验收</span>
+  <code>model_v0.py</code>（EncoderV0 + snr_features + DecoderV0 + JSCC_V0）+ <code>train_v0.py</code> ≈ 120 行。自检：<strong>合上页面，从算法 2-1 到 2-4 逐个默写</strong>，写完跟页面对照。过了就去做第 5 章关卡 4（限时 90 分钟独立写全）。</div>
+
+  <div class="quiz">
+    <div class="quiz-head">第 2 章自测</div>
+    <details><summary>数值题：CIFAR 5 万张、batch_size=256，1 个 epoch 有多少次 iteration？50 个 epoch 呢？</summary>
+      <div class="ans">ceil(50000/256)=196 次（最后一批 80 张）；50 epoch = 9800 次参数更新。三个词：epoch=全数据过一遍，batch=一次喂的 256 张，iteration=搓一批+更新一次。</div></details>
+    <details><summary>编码器里 h.reshape(h.size(0), -1) 的 -1 算出来是多少？</summary>
+      <div class="ans">4096。总元素 256×4×4=4096，第 0 维固定为 B，剩下的全塞进第二维：(B, 4096)。</div></details>
+    <details><summary>opt.zero_grad() 忘了写会出什么现象？</summary>
+      <div class="ans">PyTorch 梯度默认累加——每批的梯度叠上历史批次的，等效步长越走越大、方向被旧梯度污染，loss 先降后爆或剧烈震荡。它是五连里最「不报错但毁训练」的一步。</div></details>
+    <details><summary>class 里忘了写 super().__init__() 会怎样？</summary>
+      <div class="ans">在 self.fc = nn.Linear(...) 那行（或更早）直接报错——父类的参数记账本没搭起来，零件登记不进去。报错长得吓人，病因就一行。</div></details>
+    <details><summary>power_norm 里把 keepdim=True 删掉，程序会报错吗？</summary>
+      <div class="ans">分情况：B=k 时会按列广播，静默混入别的样本的 RMS；一般 B≠k 且两者大于 1 时会报错；B=1 时可能碰巧算对。必须验证 B=1、B=k、B≠k，并明确期望除数形状是 (B,1)。跑码件的 [0.24,0.32] 演示是除均方值的广播算术，不是最终 RMS 归一化结果。</div></details>
+    <details><summary>stride=2 的转置卷积用 4/2/1 组合，4×4 输入输出多大？连过三次呢？</summary>
+      <div class="ans">4→8→16→32。这组 (kernel=4, stride=2, padding=1) 就是「尺寸×2」的镜像口诀，跟卷积那组减半互为镜像。</div></details>
+    <details><summary>编码器为什么用 stride=2 卷积而不是 pool？</summary>
+      <div class="ans">两种都能做。stride=2 卷积让「下采样」本身可训练（pool 是固定规则），JSCC 文献普遍用卷积下采样。本质区别不大，用哪个都能出结果——面试被问就说「文献惯例 + 可训练的下采样对重建更友好」。</div></details>
+    <details><summary>k=43（1/24）时 4096→43 的全连接压得这么狠，重建图会怎样？</summary>
+      <div class="ans">信息瓶颈变窄，通常更难保留细节；但曲线形状和与 JPEG 的差距必须实测。不同 k 需分别训练并匹配测试预算，不能从示意动画推出结论。</div></details>
+    <details><summary>训练循环里 loss_fn(x_hat, x) 换成 loss_fn(x_hat, y)（信道输出）会怎样？</summary>
+      <div class="ans">错。目标是「恢复原图」，监督信号必须是 x。y 是被噪声污染的中间量，拿它当目标等于让网络学「复述噪声」——loss 会降但重建图是糊的。这是第 5 章排查清单里的第 1 条。</div></details>
+    <details><summary>为什么解码器要吃 SNR，编码器不用？</summary>
+      <div class="ans">编码器在发射端，「信道多差」它管不着（发出去的符号固定功率）；解码器在接收端，得根据噪声强度调整「修图力度」——噪声大时更依赖先验（输出平均脸式的保守估计），噪声小时敢信符号细节。实验证明给 SNR 特征能显著提升低 SNR 表现。</div></details>
+  </div>
+</section>
+
+
+<section class="chapter" id="ch3">
+<h2><span class="chno">第 3 章</span>SNR 随机化 · 评测 · JPEG 基线</h2>
+<div class="callout summary"><span class="co-title">先抓住主线</span>第 2 章解决“能不能训练”；本章解决“怎样证明它有效”。先让模型见过不同噪声，再固定测试条件计算重建误差，最后把传统链路的发送预算算清楚。<strong>曲线的高低由实验回答，不能先写结论再凑数据。</strong></div>
+<h3 id="ch3-snr">3.1 随机 SNR：每一批换一种天气</h3>
+<p><strong>训练 SNR</strong>决定模型平时见到多大噪声；<strong>测试 SNR</strong>是考场环境。只在 10 dB 训练，好比一直在安静教室听课，换到吵闹站台未必适应。随机训练让同一个模型在若干种环境里练习，但不保证它在每个点都胜过专门训练的模型。</p>
+<table class="map-table"><tr><th>策略</th><th>这一批做什么</th><th>测试时怎么做</th></tr><tr><td>固定训练</td><td>每个 batch 都用 10 dB；每次仍重新生成噪声</td><td>同一权重分别测 0、5、10、15、20 dB</td></tr><tr><td>随机训练</td><td>每个 batch 从 [0,20] dB 均匀采一个数，全批共享</td><td>仍按固定的 SNR 网格逐点评测</td></tr><tr><td>逐图采样（进阶）</td><td>每张图各一个 SNR，形状 (B,1)</td><td>要同时改信道广播和 SNR 特征接口；不能只替换一行</td></tr></table>
+<p>本教程保留 <code>model(x, snr_db)</code> 的标量接口。下面是<strong>训练循环里的局部替换</strong>，不是完整训练工程。</p>
+<div class="code-card notes-on" id="code-random-snr"><div class="cc-head"><span class="cc-file">局部机制 · 一批一个 SNR</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div><pre data-lang="python">import random
+snr_rng = random.Random(42)    # 在所有 epoch 之前创建一次
+
+# 以下两行放在 for x, _ in loader 内
+snr_db = snr_rng.uniform(0.0, 20.0)
+x_hat = model(x, snr_db)</pre><script class="cc-notes" type="application/json">{"1": "独立的随机数发生器。不要每一批重新设种子，否则每批都会抽到同一个数。", "4": "得到 Python 浮点数，例如 12.79 dB；这一批所有图共享噪声强度，但各元素的噪声取值仍独立。", "5": "编码器、信道、解码器仍走第 2 章那条链。解码器拿到同一个 snr_db。"}</script></div>
+<div class="callout tip"><span class="co-title">参数与单位先对齐</span>在 dB 域均匀抽样，不等于在线性功率比域均匀抽样。0、10、20 dB 对应噪声方差 1、0.1、0.01；“每隔 10 dB”意味着方差相差 10 倍。训练记录应写清采样域、上下限、按批还是按图采样。</div>
+<h3 id="ch3-psnr">3.2 PSNR：先平方平均，再取对数</h3>
+<p>先区分两个“信噪比”：<strong>信道 SNR</strong>衡量发送符号与信道噪声的功率比，是实验旋钮；<strong>图像 PSNR</strong>衡量重建误差，是输出成绩。两者都用 dB，但不相等。PSNR 中的峰值 MAX 是像素范围的上限；[0,1] 图像取 1，原始 [0,255] 图像取 255。</p>
+<div class="formula-card"><div class="f-head"><span class="f-tag">算法 3-1 · 一张图的重建分数</span></div>
+<div class="math-display">e_i=\hat{x}_i-x_i</div><div class="math-display">\mathrm{MSE}=\frac{1}{D}\sum_{i=1}^{D}e_i^2</div><div class="math-display">\mathrm{PSNR}=10\log_{10}\frac{\mathrm{MAX}^2}{\mathrm{MSE}}</div>
+<p><strong>符号翻译：</strong>x 是原图，x̂ 是重建图，i 是某个颜色通道里的某一格，D=3HW 是一张图参与比较的所有数的个数。MSE 越小，PSNR 越大；PSNR 不直接衡量物体是否被正确识别。</p></div>
+<p><strong>完整小例子：</strong>原图四格 [0, 0.5, 1, 0.5]，重建 [0.1, 0.4, 0.8, 0.5]。误差是 [0.1, −0.1, −0.2, 0]，平方是 [0.01, 0.01, 0.04, 0]，MSE=0.06/4=0.015，PSNR≈18.239 dB。这是一张四格玩具图的全部数据，不是某个 batch 的一行摘要。</p>
+<div class="code-card notes-on" id="code-psnr"><div class="cc-head"><span class="cc-file">教学函数 · 输入 (B,C,H,W)，输出每张图的 (B,) 分数</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div><pre data-lang="python">import torch
+
+def psnr_per_image(x_hat, x):
+    error = x_hat - x
+    squared = error ** 2
+    mse = squared.mean(dim=(1, 2, 3))
+    return -10.0 * torch.log10(mse)</pre><script class="cc-notes" type="application/json">{"3": "逐格相减，形状仍是 (B,C,H,W)。调用前两张图必须尺寸、值域、通道顺序一致。", "5": "对通道、高、宽求平均，保留 batch；每张图得到一个 MSE，不能把整批先平均。", "6": "MAX=1，因此 10 log10(1/MSE)=-10 log10(MSE)。完全相等时 MSE=0，数学结果是 +∞；演示保留这个结果。"}</script></div>
+<div class="callout warn"><span class="co-title">两个“平均”不是同一个结果</span>两张图的 MSE 分别是 0.01、0.1，各自 PSNR 为 20、10 dB，<strong>逐图 PSNR 均值=15 dB</strong>。先平均 MSE 得 0.055 再换算，得到约 <strong>12.596 dB</strong>。两者都是可定义的指标，但不能混用。本页曲线采用逐图 PSNR 的算术平均。若用 clamp 避免 log(0)，要披露阈值及对应的分数上限。</div>
+<div class="viz-panel" id="viz-psnr"><div class="vp-head"><span class="vp-title">交互 4 · 拖动误差，看 MSE 怎样变成 dB</span></div><div class="vp-body"><label for="psnr-mse">MSE（对数刻度）</label><input id="psnr-mse" type="range" min="-4" max="-1" value="-2" step="0.05"><output id="psnr-result" aria-live="polite"></output><p class="viz-note">这里按公式计算，不代表训练得到的性能。误差功率缩小 10 倍，PSNR 增加 10 dB。</p></div></div>
+<h3 id="ch3-eval">3.3 从一次 forward 到可信的一条曲线</h3>
+<ol class="steps"><li><strong>先划分数据：</strong>训练集更新权重，验证集选超参数与检查点，测试集只做最终报告。不能看着测试分数反复挑最好的一轮。</li><li><strong>冻结模型行为：</strong>调用 <code>model.eval()</code>；评测放在 <code>torch.no_grad()</code> 或 inference_mode 中。eval 不等于关闭梯度，也不会关闭你自定义信道里的 randn。</li><li><strong>一次只改一个条件：</strong>固定权重和 k，测试 SNR 依次取 0、5、10、15、20 dB。每个点遍历同一测试集，噪声重新采样。</li><li><strong>按图累计：</strong>对每张图算 PSNR，累加分数并累加图数，最后相除。不要把不同大小 batch 的均值再等权平均，最后一批可能比较小。</li><li><strong>测随机波动：</strong>例如预先指定 3 个种子，各完成一次全测试集评测；报告 3 次均值的平均与标准差。控制数据顺序、种子与噪声形状；精确配对比较时复用显式生成的噪声。同一整数种子不保证不同架构消耗随机数的方式相同。</li><li><strong>留下证据：</strong>记录模型名、检查点、实数符号数 k、SNR 定义、信道、CSI 假设、测试集、种子、逐图均值 PSNR、重复次数和标准差。CSV 一行对应一个明确实验条件。</li></ol>
+<p><strong>C 类比：</strong>统计就是 <code>sum += 每张图的分数; count += 图数;</code>，最后 <code>sum/count</code>。测试协议像通信实验的仪器设置，换旋钮之前先固定其余条件。</p>
+<h3 id="ch3-budget">3.4 JPEG+BPSK：先数用了多少次信道</h3>
+<p>JPEG 输出<strong>字节</strong>，BPSK 输入<strong>比特</strong>，JSCC 输出<strong>连续实数</strong>。三者不能直接比长度。本教程统一按“实数信道使用次数”记预算：JSCC 发送 k 个实数就是 k 次；无编码 BPSK 每比特需要一次。</p>
+<div class="formula-card"><div class="f-head"><span class="f-tag">算法 3-2 · 无编码 BPSK 的发送账</span></div><div class="math-display">L=\operatorname{len}(\text{JPEG bytes}),\qquad K_{\mathrm{BPSK}}=8L</div><p>例如某张 JPEG 实测 700 字节，就需要 5600 次 BPSK 发送；本页 JSCC k=256 只发 256 次，不能把二者称作等带宽。加上 CRC、纠错编码和帧头后还会增加开销；码率 R=1/2 意味着每个信息比特大约对应两个编码比特。</p></div>
+<table class="map-table"><tr><th>对象</th><th>玩具数字</th><th>如何判断</th></tr><tr><td>JSCC</td><td>k=256 次实数使用</td><td>固定预算 256</td></tr><tr><td>JPEG＋无编码 BPSK</td><td>L=700 字节 → 5600 次</td><td>超预算，不能硬画在“等预算”对比里</td></tr><tr><td>可容纳的 JPEG</td><td>256/8=32 字节</td><td>连常规 JPEG 文件头都可能容不下；质量因子再低也不保证可行</td></tr></table>
+<p><strong>正确处理“不够装”：</strong>预先确定预算，在合法质量因子中实测文件大小；若没有任何完整码流符合预算，记录 <code>infeasible</code>（不可行）。不能截断字节伪装预算满足，也不能偷偷给 JPEG 更多信道使用次数。先用较大图或较宽预算做可行的教学比较；固定 32×32 的 V0 处理大图时要按分块数乘 k。</p>
+<div class="callout tip"><span class="co-title">BPSK 的 3 dB 口径坑</span>本页实数信道用 γ=P/σ²；传统 BPSK BER 图常用 γᵦ=Eᵦ/N₀。单位能量 BPSK、实维噪声方差 σ²=N₀/2 时，γ=2γᵦ，因此本页 SNR(dB)=Eᵦ/N₀(dB)+3.0103。复用单元 4 代码前先检查横轴和噪声公式，不能只把变量改名。</div>
+<h3>3.5 JPEG 基线链路：失败也属于结果</h3>
+<ol class="steps"><li>原图编码成完整 JPEG 字节，记录字节数、质量因子、色度采样及帧开销。</li><li>字节拆成比特，映射 0→+1、1→−1。注意 NumPy 的 uint8：先转浮点再算 <code>1.0 - 2.0 * bits</code>，避免负数回绕。</li><li>按同一种实数 SNR 定义加噪，接收值小于 0 判为 1，再按原顺序拼回字节。</li><li>用解码器完整加载图像；解码可能抛错，也可能成功但图已受损。若实验定义了 CRC，则按 CRC 规则判失败，且开销计入预算。</li><li>预先约定失败图的替代规则，例如输出全 0.5 灰图，然后与原图计算 PSNR；同时报告解码失败率，不能只平均成功图片。</li></ol>
+<p><strong>实验级别要写明：</strong>JPEG＋无编码 BPSK 是理解码流脆弱性的入门基线。它没有 LDPC 等纠错保护，不能代表所有传统通信系统。要研究强分离式方案，应加入明确的纠错编码与码率，或单列“理想容量基线”并披露理想假设。不能用人为设置的 5 dB 崩坏门限替代实验。</p>
+<h3>3.6 大图、任务指标与练习</h3>
+<p>当前 CNN 和本页 V1 都使用固定长度全连接，输入限定为 32×32。大图先切 32×32 块、每块独立发送，再按原位置拼回。边缘不足整块时记录补边方式，算 PSNR 前裁去补边；先拼整图再按整图算指标。分块会出现接缝、丢失跨块联系，测试报告需要说明。位置编码插值本身不能把固定长度全连接变成任意尺寸网络。</p>
+<p>后续把重建图送入 YOLO，只能说明这条传输链路对检测任务的影响。只用 MSE 训练的模型是<strong>图像重建 JSCC</strong>；要称作任务导向优化，需要明确任务目标是否进入训练、参数如何更新，并独立报告 mAP。不能由 PSNR 高直接推出检测更准。</p>
+<details class="quiz-item"><summary>自测：两批分别有 4 张、1 张，平均分为 20、10 dB，总平均是多少？</summary><div class="ans">(4×20+1×10)/5=18 dB，不是 (20+10)/2=15 dB。</div></details><details class="quiz-item"><summary>自测：eval 后同一图片两次输出不同，一定是 bug 吗？</summary><div class="ans">不一定。eval 改变 Dropout/BatchNorm 等模块的行为；信道里的 randn 仍会采新噪声。固定噪声用于排查，随机重复用于评测。</div></details><details class="quiz-item"><summary>自测：JPEG 解码失败的图全部跳过，为什么会高估成绩？</summary><div class="ans">最困难、误码最多的样本被删掉了，剩下的是有偏的成功子集。按预先声明的失败规则计分，并单独报告失败率。</div></details><p class="ep-ref">跑码件：<a href="demos/demo_ch3_metrics.py">demo_ch3_metrics.py</a>，验证 PSNR 数字、聚合差异和预算账，不训练模型。</p></section>
+
+<section class="chapter" id="ch4">
+<h2><span class="chno">第 4 章</span>Transformer 版 JSCC（V1）</h2>
+<div class="callout summary"><span class="co-title">这一章具体要做什么</span>保留“图像→编码器→功率约束→信道→解码器→重建”的接口，把 CNN 的特征提取换成图像 token 的自注意力。下面是一套<strong>固定 32×32 输入的教学设计</strong>，不是某篇论文的逐层复现，也没有预设它一定优于 CNN。你将得到形状账、参数含义和局部玩具例子，完整模型仍由你组装。</div>
+
+<h3 id="ch4-route">4.0 先把 Transformer 接到 JSCC 的哪一段看清楚</h3>
+<p>你在翻译课程里学的是“句子 → token → 注意力 → 另一个句子”。这里保留注意力处理向量的能力，把输入换成图像小块，并在两端之间插入<strong>有限长度、会受噪声污染的信道</strong>。本章先完成基础 V1，再研究接收端信道条件调节；CNN V0 用来提供可解释的起点。</p>
+<div class="chapter-links"><a href="#ch4-flow">看完整数据流</a><a href="#ch4-patch">学切块</a><a href="#ch4-attention">接回多头注意力</a><a href="#ch4-condition">学 SNR 门控</a><a href="#ch4-budget">算 patch 预算</a><a href="#ch4-experiments">安排实验</a><a href="#ch4-reading">对应论文</a></div>
+<table class="map-table"><tr><th>翻译课程里的零件</th><th>图像 JSCC 中的对应物</th><th>这一处要重新理解</th></tr><tr><td>词编号、Embedding 查表</td><td>连续像素块、Linear 投影</td><td>没有词表，48个像素数一起参与矩阵乘法</td></tr><tr><td>词序列的位置</td><td>图像块的二维位置</td><td>本页先按行展平块编号，再用固定大小可学习位置表</td></tr><tr><td>Q / K / V、多头、FFN</td><td>处理图像 token 的同类运算</td><td>形状规则沿用；语义变成“哪块参考哪块”</td></tr><tr><td>逐词预测的 decoder</td><td>一次重建所有块的接收端</td><td>可用自注意力块，不需要逐词生成和因果遮罩</td></tr><tr><td>干净的 encoder memory</td><td>经过信道后的 y</td><td>无噪特征不能直接送到收端，否则绕过了通信预算</td></tr></table>
+<div class="viz-panel" id="ch4-flow"><div class="vp-head"><span class="vp-title">交互 6 · V1 十二步：每一步拿到什么、交出什么</span></div><div class="vp-body"><p class="tl-note">固定 B=2、32×32 RGB、p=4、d=64、k=256。先按“下一步”走一遍，再点任意步骤回看；橙色框是实际信道边界。这里展示架构与形状，不执行图像训练。</p><div class="tl-controls"><button type="button" id="tl-prev">← 上一步</button><button type="button" id="tl-next">下一步 →</button></div><div class="tl-steps" id="tl-flow-buttons" aria-label="V1 数据流步骤"></div><div class="tl-explain" id="tl-flow-detail" aria-live="polite"><h4 id="tl-flow-title"></h4><p class="tl-shape" id="tl-flow-shape"></p><p id="tl-flow-body"></p><p class="tl-note" id="tl-flow-caution"></p></div></div></div>
+<div class="callout tip"><span class="co-title">三个版本分别回答三个问题</span><strong>V0：</strong>卷积能否学会图像过信道？<strong>V1-base：</strong>换成基础 Transformer 后，同预算下的质量与开销怎样变化？<strong>V1-gate：</strong>保留同一套 Transformer，加一处 SNR 条件调节是否有帮助？先完成前一个，再增加后一个。YOLO 检测与卫星信道留作主体完成后的应用评测。</div>
+
+<h3 id="ch4-patch">4.1 图像怎么变成 64 个 token</h3>
+<p>翻译模型的 token 是词表中的编号；这里的 token 是一小块图像投影得到的向量。<strong>patch</strong> 就是“小块”：32×32 图像按 4×4 不重叠切块，每行 8 块，共 8×8=64 块。每块有 RGB 三个通道，因此一块带 3×4×4=48 个数。</p>
+<table class="map-table"><tr><th>记号</th><th>本章数值</th><th>含义</th></tr><tr><td>B</td><td>例如 2</td><td>一批图像数</td></tr><tr><td>p</td><td>4</td><td>小块边长，不是块的数量</td></tr><tr><td>N</td><td>(32/4)²=64</td><td>每张图的 token 数；与第 1 章 n=3072 区分</td></tr><tr><td>d</td><td>64</td><td>一个 token 的特征维度；不表示信道发送了 64 个符号</td></tr><tr><td>k</td><td>256</td><td>最终真正过信道的实数个数</td></tr></table>
+<p><strong>别把“块”和“块内元素”混在一起：</strong>完整批形状依次是 (B,3,32,32) → (B,64,48) → (B,64,64)。其中第二个轴始终是“第几块”，第三个轴从 48 个原始数变成 d=64 个特征数。</p>
+<div class="viz-panel" id="viz-patch"><div class="vp-head"><span class="vp-title">交互 5 · 选中一个 patch，对账行列与编号</span></div><div class="vp-body"><div id="patch-grid" class="patch-grid" role="group" aria-label="8乘8图像分块"></div><output id="patch-result" aria-live="polite"></output><p class="viz-note">从 0 编号，token 序号=row×8+col。色块只用来表示位置，不代表训练图像。</p></div></div>
+<h3>4.2 先用 4×4 单通道小图看清切块</h3>
+<p>下面使用一张只有一个通道的小图，块边长改成 2，方便把<strong>所有数</strong>打印出来。正式网络换回三通道、32×32 和 p=4，轴的含义相同。C 类比：<code>patch[b][块行*块列数+块列][c*p*p+块内行*p+块内列]</code>，只是把原图坐标换成了块坐标。</p>
+<div class="code-card notes-on" id="code-patch-toy"><div class="cc-head"><span class="cc-file">可独立运行 · 切块与拼回（没有网络训练）</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div><pre data-lang="python">import torch
+
+x = torch.arange(16).reshape(1, 1, 4, 4)
+grouped = x.reshape(1, 1, 2, 2, 2, 2)
+ordered = grouped.permute(0, 2, 4, 1, 3, 5)
+patches = ordered.reshape(1, 4, 4)
+print(patches)
+
+back = patches.reshape(1, 2, 2, 1, 2, 2)
+back = back.permute(0, 3, 1, 4, 2, 5)
+restored = back.reshape(1, 1, 4, 4)
+print(torch.equal(x, restored))</pre><script class="cc-notes" type="application/json">{"2": "完整输入是一张 1×4×4 图，四行依次为 0–3、4–7、8–11、12–15。", "3": "六个轴是 (B,C,块行,块内行,块列,块内列)，把高、宽分别拆成“块数×块长”。", "4": "改成 (B,块行,块列,C,块内行,块内列)，先按整块分组。permute 是换轴，不是把数字重新计算一遍。", "5": "得到 4 块，每块 4 个数。permute 后内存不连续时 reshape 可能复制，不能一概说所有 reshape 都零拷贝。", "8": "准备把块恢复成六个轴。", "9": "把轴放回图像顺序。", "11": "必须打印 True；切块+拼回没有丢任何数字。"}</script></div>
+<pre class="toy-output">四个 token 的原始块：
+[[ 0,  1,  4,  5],   ← 左上块
+ [ 2,  3,  6,  7],   ← 右上块
+ [ 8,  9, 12, 13],   ← 左下块
+ [10, 11, 14, 15]]   ← 右下块
+拼回后与原图完全相等：True</pre>
+<h3 id="ch4-embed">4.3 投影与位置：告诉网络“这块在哪”</h3>
+<p>每块 48 个数经过同一个 <code>nn.Linear(48,64)</code>，变成一个 64 维 token。<strong>共享</strong>的意思是 64 个块使用同一套权重，不是各自造一个 Linear。这与词表 Embedding 查行不同：图像 patch 是连续数，需要做矩阵乘法。</p>
+<div class="formula-card"><div class="f-head"><span class="f-tag">算法 4-1 · 第 j 块变 token</span></div><div class="math-display">t_j=Wq_j+b</div><div class="math-display">u_j=t_j+e_j</div><p>qⱼ 是 48 维小块，W 是 64×48 权重，b 是 64 维偏置，eⱼ 是“第 j 块”的 64 维位置向量。位置表形状 (1,64,64)，与整批 (B,64,64) 相加，最前面的 1 广播到 B。</p></div>
+<p><strong>两维手算：</strong>把真实 48→64 缩成 2→2 玩具：q=[1,2]，W 两行是 [1,0]、[1,1]，b=[0,0]，则 t=[1,3]。若该位置向量 e=[0.1,−0.2]，u=[1.1,2.8]。位置是在特征上相加，不是额外增加一个 token。</p>
+<h3 id="ch4-attention">4.4 Attention 在这里看的是图像块</h3>
+<p>令 d=64、头数 h=4，每头维度 dₕ=16。完整形状：输入 (B,64,64)，Q/K/V 拆头后各为 (B,4,64,16)，注意力分数为 (B,4,64,64)。最后两个 64 的身份不同：<strong>行=发起查询的块，列=被关注的块</strong>。例如第 0 行第 9 列表示“左上块从第 9 块取多少信息”。</p>
+<div class="formula-card"><div class="f-head"><span class="f-tag">算法 4-2 · 每个头内部的三步</span></div><div class="math-display">S=QK^\mathsf{T}/\sqrt{16}</div><div class="math-display">A=\operatorname{softmax}(S)\quad\text{（沿 key 列）}</div><div class="math-display">O=AV</div><p>先算相似度，再把每一行归一成权重，最后按权重混合 V。这里每一行对应一个 query patch；softmax 沿最后一维，不是跨 batch 归一化。</p></div>
+<p><strong>一个小头的具体计算：</strong>若某 query 对两个 key 的缩放分数是 [0, ln 3]，softmax 得 [0.25,0.75]；两行 V=[2,0] 与 [0,4]，这个 query 输出就是 0.25[2,0]+0.75[0,4]=[0.5,3]。这是一个 query 行的局部例子，完整注意力表仍有 N 个 query 行。</p>
+<p>图像重建一次可以看到全部收到的信息，<strong>不需要翻译任务的 causal mask（遮未来）</strong>。每张图固定 64 块，也没有变长句子的 PAD。本教学方案的两端都可使用自注意力 encoder block；“接收端解码器”是通信系统的职责名称，不意味着必须调用带 cross-attention 的 <code>nn.TransformerDecoder</code>。</p>
+<div class="code-card notes-on" id="code-attention-toy"><div class="cc-head"><span class="cc-file">局部层实验 · 只看接口，不是完整 V1</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div><pre data-lang="python">import torch
+import torch.nn as nn
+
+block = nn.TransformerEncoderLayer(
+    d_model=64, nhead=4, dim_feedforward=128,
+    dropout=0.0, batch_first=True, norm_first=True)
+tokens = torch.randn(2, 64, 64)
+result = block(tokens)
+print(result.shape)    # torch.Size([2, 64, 64])</pre><script class="cc-notes" type="application/json">{"4": "64 维特征分成 4 个头，每头 16 维；dim_feedforward=128 是块内部前馈网络的中间宽度，不是 token 数。", "5": "batch_first=True 明确输入顺序 (B,N,d)；norm_first=True 采用 Pre-LN；dropout=0 便于这段玩具复现。", "6": "完整输入：2 张图×每图 64 块×每块 64 维，不是一个 token。", "7": "self-attention 和前馈网络改变内容，保持外部形状。"}</script></div>
+<h4 id="ch4-block">4.4.1 接回你学过的完整 Transformer block</h4>
+<p>上面的代码把整块封装起来了。把它打开，Pre-LN 的顺序如下。令输入 T 的形状为 (B,N,d)=(2,64,64)，先不考虑 Dropout（局部例子设为0）。</p>
+<table class="map-table"><tr><th>顺序</th><th>怎么计算</th><th>形状与目的</th></tr><tr><td>1 · 归一化</td><td>U = LayerNorm(T)</td><td>(2,64,64)；分别归一每个token最后一维的64个特征</td></tr><tr><td>2 · 多头注意力</td><td>A = MHA(U,U,U)</td><td>(2,64,64)；三个U经各自投影成为Q/K/V，混合不同图块的信息</td></tr><tr><td>3 · 第一次残差</td><td>R = T + A</td><td>(2,64,64)；保留输入，也加入注意力更新</td></tr><tr><td>4 · 再归一化</td><td>V = LayerNorm(R)</td><td>(2,64,64)；使用第二套LayerNorm参数</td></tr><tr><td>5 · 前馈网络</td><td>F = Linear₂(ReLU(Linear₁(V)))</td><td>(2,64,64) → (2,64,128) → (2,64,64)，逐token处理</td></tr><tr><td>6 · 第二次残差</td><td>输出 = R + F</td><td>(2,64,64)；块外形状不变，可以接下一个独立block</td></tr></table>
+<p><strong>三个容易混的64：</strong>N=64是图块数；d=64是每块特征宽度；单头关系表恰好也是64×64，因为每个query块都要和每个key块配对。头数4不是把64个图块分成四组，而是把每个图块的特征投影后拆成4份，每头仍看全部64块。</p>
+<p>本例没有传 activation 参数，PyTorch 默认用 ReLU；若改成 GELU，要记录这是另一处配置变化。注意力在块与块之间交换信息，FFN则对每个块使用同一套非线性变换。两条残差都在各自一端内部，不能跨越噪声信道把干净特征送到接收端。</p>
+
+<h3 id="ch4-bottleneck">4.5 真正的瓶颈：4096 个特征 → k 个发送数</h3>
+<p>64×64=4096 个 token 特征<strong>不能全部偷偷传过去</strong>。编码器末尾把它们展平成 (B,4096)，再用 Linear(4096,k) 压成 (B,k)，之后复用第 1 章功率归一化和信道。编码器内部 d=64，并不等于发送预算 k。</p>
+<table class="map-table"><tr><th>阶段</th><th>完整形状（k=256）</th><th>要做的事</th></tr><tr><td>输入</td><td>(B,3,32,32)</td><td>像素 [0,1]</td></tr><tr><td>切块</td><td>(B,64,48)</td><td>按块行、块列顺序排列</td></tr><tr><td>投影＋位置</td><td>(B,64,64)</td><td>Linear(48,64) 加位置表</td></tr><tr><td>发送端注意力</td><td>(B,64,64)</td><td>例如 2 个独立 block，头数 4</td></tr><tr><td>展平＋瓶颈</td><td>(B,4096) → (B,256)</td><td>只有 256 个实数过信道</td></tr><tr><td>功率约束＋信道</td><td>(B,256)</td><td>原有归一化与 AWGN</td></tr><tr><td>接收端 SNR 注入</td><td>(B,258)</td><td>拼入 2 个已知条件特征</td></tr><tr><td>恢复 token</td><td>(B,4096) → (B,64,64)</td><td>Linear(258,4096)，加接收端位置表</td></tr><tr><td>接收端注意力</td><td>(B,64,64)</td><td>使用接收端自己的 block 参数</td></tr><tr><td>预测各块像素</td><td>(B,64,48)</td><td>逐 token Linear(64,48)＋Sigmoid</td></tr><tr><td>拼回图像</td><td>(B,3,32,32)</td><td>按 4.2 的逆排列，之后与原图算 MSE</td></tr></table>
+<div class="callout warn"><span class="co-title">不能出现“免费旁路”</span>接收端只能用带噪 y、双方约定的固定位置表、假设已知的 SNR/CSI。不能把发送端的无噪 token 或原图特征作为 cross-attention 的 memory 直接传给接收端，否则信息绕过了信道。CSI 若要估计，导频开销需要在后续真实链路预算中计入。</div>
+<h3>4.6 自己实现时，按这四步验收</h3>
+<ol class="steps"><li><strong>先验证坐标：</strong>用 0–15 的小图做 patchify→unpatchify，要求逐元素完全相同。位置错了，loss 也可能下降，所以不能只看曲线。</li><li><strong>只打印形状：</strong>先 batch=2，逐层对上 4.5 表。nhead 必须整除 d；编码器和解码器各层参数应按设计独立创建，别用列表重复同一个模块对象而意外共享权重。</li><li><strong>再检查梯度：</strong>先用无噪信道检查前向与反传，确认编码器梯度有限且非零，再恢复 AWGN。训练中没有 detach/no_grad 把链截断。小批过拟合用于排查组装，不用于报告泛化性能。</li><li><strong>最后比较 V0/V1：</strong>同样 k、功率、SNR、数据划分、训练预算与测试协议，另列参数量、耗时。改 k 会改变全连接权重形状，当前结构需要为不同 k 分别训练；不能拿同一检查点随意切 k。</li></ol>
+<p><strong>为什么不能只插值位置表就传大图：</strong>32×32 有 64 个 token，展平长度 4096；若变成 64×64，就有 256 个 token、展平长度 16384。即使位置表插值成功，Linear(4096,k) 仍接不住 16384。当前先采用第 3 章分块测试；支持任意尺寸要另设计瓶颈与符号预算，属于后续模型改造。</p>
+<details class="quiz-item"><summary>自测：64 个 token，每个 64 维，k=256。信道究竟发几个数？</summary><div class="ans">256 个实数。4096 个 token 特征在发送端内部，经过 Linear(4096,256) 才成为信道输入。</div></details><details class="quiz-item"><summary>自测：图像接收端叫 decoder，为什么可以用 TransformerEncoderLayer？</summary><div class="ans">前者是“重建图像”的系统职责，后者是自注意力块的 API 名称。这里并非按时间逐词生成，不强制 causal mask 或 cross-attention。</div></details><details class="quiz-item"><summary>自测：k 相同就能断言 Transformer 一定更好吗？</summary><div class="ans">不能。优化、数据量、模型容量与训练预算都会影响结果；需要匹配协议并实际测量，不能把架构直觉当实验结论。</div></details><p class="ep-ref">跑码件：<a href="demos/demo_ch4_patch_toys.py">demo_ch4_patch_toys.py</a>，核对切块逆变换、注意力形状和梯度；不提供完整项目模型。</p>
+<h3 id="ch4-condition">4.7 让接收端 Transformer 知道“现在有多吵”</h3>
+<p><strong>先想一个接收机：</strong>听到含糊声音时，你可能更多结合上下文；声音清楚时，更依赖当前观测。神经网络也可以把噪声水平作为条件，学出不同的特征处理方式。但“噪声大时应该放大哪一维”没有人工固定答案，需要从训练数据里学。</p>
+<p>第 2 章和 V1-base 已经把两个 SNR 特征拼到接收向量末尾。本节保留这个接口，只新增<strong>一处逐特征维度的缩放</strong>：接收向量恢复成 token，加好接收端位置表，然后缩放，再进入第一个接收端 Transformer block。</p>
+<pre class="toy-output">y + 两个 SNR 特征 → Linear → reshape 为 (B,N,d)
+→ 加接收端位置表 → [本节新增：SNR 门控] → 接收端自注意力 → 像素</pre>
+<table class="map-table"><tr><th>机制</th><th>它看什么</th><th>它产生什么</th></tr><tr><td>图块自注意力</td><td>当前各个 token 的内容</td><td>每个头 N×N 的图块关系权重</td></tr><tr><td>本节 SNR 门控</td><td>每张图一个估计 SNR</td><td>d 个缩放系数，同一图各块共用</td></tr></table>
+<p>这里“特征通道”指 token 向量的第几个分量，不是无线信道，也不是 RGB 三色通道。门控不会增加或减少 token 数，更不会把 k=256 自动变成另一种码率。</p>
+<h4>4.7.1 先分清真实 SNR 和接收端知道的 SNR</h4>
+<table class="map-table"><tr><th>量</th><th>进入哪里</th><th>用来控制什么</th></tr><tr><td>SNR_true</td><td>信道加噪函数</td><td>真实噪声标准差 σ=10^(−SNR_true/20)</td></tr><tr><td>SNR_est</td><td>拼接特征与门控网络</td><td>接收端选择怎样处理特征</td></tr></table>
+<p>第一轮实验假设估计准确，令两者相等。以后做估计误差实验，必须<strong>固定真实加噪条件，只改输入给网络的估计值</strong>。例如实际 10 dB、估计 0 dB；不能因为告诉网络 0 dB，就连实际噪声也改成 0 dB。</p>
+<p>本节只在接收端加门控，因此不额外要求发送端取得 SNR。若以后把门控也放到发端，就需说明反馈或其他信道信息来源，并计入相应开销。理想已知 SNR 是仿真假设，真实系统估计通常需要资源。</p>
+<h4>4.7.2 一行乘法，先用两块、四维手算</h4>
+<div class="formula-card"><div class="f-head"><span class="f-tag">算法 4-3 · 先缩放条件，再缩放特征</span></div><div class="math-display">r=(\widehat{\gamma}_{\mathrm{dB}}-10)/10</div><p>r 是给小网络看的输入。0、10、20 dB 分别变成 −1、0、1；这只是输入预处理，不是信噪比单位换算。中心与尺度预先固定，不能按测试集临时重算。</p><div class="math-display">g=1+0.5\tanh(\operatorname{MLP}(r))</div><p>MLP 是小型全连接网络，输出 d 个数；tanh 把它们限制在 −1 与 1 之间，所以 g 在 0.5 与 1.5 之间。这些范围是本页选择的教学设计，不是论文最佳值。</p><div class="math-display">\widetilde T_{b,j,c}=T_{b,j,c}\,g_{b,c}</div><p>b 是第几张图，j 是第几块，c 是第几个特征。对一张图，g 沿 j 复用，形状 (B,d) → (B,1,d) → 广播到 (B,N,d)。</p></div>
+<p>先把学出来的 MLP 换成手工规则练乘法：r=(SNR_est−10)/10，a=[1,−1,0,0.5]，g=1+0.5ra。估计为 0 dB 时 g=[0.5,1.5,1,0.75]；第一块 [2,−1,0,4] 就变成 [1,−1.5,0,3]。这套手工规则仅在演示范围 0–20 dB 使用，<strong>不能由它断言重建变好了</strong>。</p>
+<div class="viz-panel" id="viz-snr-gate"><div class="vp-head"><span class="vp-title">交互 7 · 固定输入，只改变“接收端认为的 SNR”</span></div><div class="vp-body"><div class="tl-controls"><label for="tl-snr">估计 SNR <input class="tl-slider" type="range" id="tl-snr" min="0" max="20" value="0" step="1"> <span id="tl-snr-value"></span></label></div><div class="tl-scroll"><table class="tl-grid"><thead><tr><th>张量行</th><th>特征 0</th><th>特征 1</th><th>特征 2</th><th>特征 3</th></tr></thead><tbody id="tl-gate-rows"></tbody></table></div><output id="tl-gate-result" aria-live="polite"></output><p class="tl-note">表中 token 是人为给定的数字，不是某张图经过 10 dB 信道的结果。真实 10 dB 只是固定情境；滑块演示条件输入与实际噪声是两回事。所有系数由上面的手工公式生成，没有模型推理或 PSNR 预测。</p></div></div>
+<table class="map-table"><tr><th>接下来代码里的东西</th><th>作用与参数</th></tr><tr><td>torch.tensor / torch.randn</td><td>按给定列表建张量 / 生成标准高斯玩具特征</td></tr><tr><td>unsqueeze(1)</td><td>在第 1 号轴插入长度为 1 的轴；C 类比：给寻址公式多加一个只有下标 0 的维度</td></tr><tr><td>逐元素乘法 *</td><td>同位置相乘；长度为 1 的轴可以广播，不是矩阵乘法 @</td></tr></table>
+<div class="code-card notes-on" id="code-snr-broadcast"><div class="cc-head"><span class="cc-file">局部数值实验 · 两块共享一组系数</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div><pre data-lang="python">import torch
+
+tokens = torch.tensor([[[2., -1., 0., 4.],
+                        [1., 3., -2., 0.5]]])
+snr_est = torch.tensor([[0.]])
+r = (snr_est - 10.0) / 10.0
+a = torch.tensor([[1., -1., 0., 0.5]])
+g = 1.0 + 0.5 * r * a
+expanded = g.unsqueeze(1)
+adjusted = tokens * expanded
+print(g)
+print(adjusted)</pre><script class="cc-notes" type="application/json">{"0": "导入张量工具；本例只做局部数值计算，不训练图像模型。", "2": "第一块的4个特征。最外层列表是batch轴；完整形状是(1,2,4)。", "3": "第二块的4个特征；2表示块数N，4表示特征维度d。", "4": "接收端估计为0 dB，形状(1,1)。这里不调用信道，也不改变输入tokens。", "5": "按预定0–20 dB区间缩放：0→−1，10→0，20→1。这不是dB转线性功率公式。", "6": "手工规定4个特征怎样响应SNR，仅用于解释乘法；未经过学习。", "7": "得到形状(1,4)的系数：[0.5,1.5,1,0.75]。这里没有softmax，各项不要求加起来等于1。", "8": "在第1号轴插入长度1，(B,d)变(B,1,d)，使一张图的所有块共用该图的系数。", "9": "(1,2,4)乘(1,1,4)，按广播沿块轴复用，输出形状仍为(1,2,4)。", "10": "应得到[[0.5,1.5,1,0.75]]；不是信道功率分配的测量结果。", "11": "第一块变成[1,−1.5,0,3]，第二块变成[0.5,4.5,−2,0.375]。"}</script></div>
+<pre class="toy-output">g = [[0.5000, 1.5000, 1.0000, 0.7500]]
+adjusted = [[[1.0000, -1.5000, 0.0000, 3.0000],
+             [0.5000,  4.5000,-2.0000, 0.3750]]]</pre>
+<h4>4.7.3 把手工系数换成可学习的小网络</h4>
+<p>下面仍然只是一块局部零件。先让缩放系数全为 1，相当于“原样通过”；之后把它注册为模型子模块，由同一个重建 MSE 更新它的参数。正式模型中需在初始化阶段创建并登记门控，随模型移动到同一设备；不要在每次 forward 里重新创建。不同图片的 SNR 要保留为 (B,1)。</p>
+<table class="map-table"><tr><th>新 API</th><th>读法</th></tr><tr><td>nn.Sequential</td><td>按顺序执行一组层；gate[2] 取第 3 个零件，即第二个 Linear</td></tr><tr><td>nn.Linear(in,out)</td><td>只变最后一维；参数数量是 in×out+out（含偏置）</td></tr><tr><td>nn.ReLU / nn.Tanh</td><td>前者保留正数、负数变零；后者平滑压入 (−1,1)</td></tr><tr><td>nn.init.zeros_</td><td>原地把权重或偏置设为零；这里仅用于初始化末层</td></tr><tr><td>torch.allclose</td><td>比较两个张量是否在数值容差内一致，返回布尔值</td></tr></table>
+<div class="code-card notes-on" id="code-snr-learnable"><div class="cc-head"><span class="cc-file">局部门控零件 · 初始为恒等变换</span><button class="cc-btn" data-role="toggle-notes">逐行讲解：开</button></div><pre data-lang="python">import torch
+import torch.nn as nn
+
+d = 64
+gate = nn.Sequential(
+    nn.Linear(1, 16), nn.ReLU(),
+    nn.Linear(16, d), nn.Tanh())
+nn.init.zeros_(gate[2].weight)
+nn.init.zeros_(gate[2].bias)
+tokens = torch.randn(2, 64, d)
+snr_est = torch.tensor([[0.], [20.]])
+r = (snr_est - 10.0) / 10.0
+g = 1.0 + 0.5 * gate(r)
+adjusted = tokens * g.unsqueeze(1)
+print(adjusted.shape)
+print(torch.allclose(adjusted, tokens))</pre><script class="cc-notes" type="application/json">{"0": "张量与自动求导。", "1": "nn是网络层的命名空间；下方Sequential按顺序调用每层。", "3": "与V1的token特征维度相同；它不是发送符号数k。", "4": "这个局部网络只生成缩放系数，不编码整张图。", "5": "每张图1个归一化SNR → 16个中间特征；ReLU把负数截为0。", "6": "16 → d个数；Tanh把每个数限制在−1到1之间。", "7": "gate[2]是第二个Linear。初始末层权重设为0，使初始系数容易检查。", "8": "末层偏置也设为0，所以网络初始输出全部为0。", "9": "2张图，每图64块，每块64维；这些是玩具特征，不是训练结果。", "10": "每张图各有一个估计值，形状(B,1)。不要把两个样本先求平均。", "11": "固定的输入预处理；实际加噪仍按第1章真实SNR公式。", "12": "缩放系数形状(B,d)，范围在0.5与1.5之间，初始全为1。", "13": "(B,N,d)乘(B,1,d)：每张图自己的系数复用到该图全部块。", "14": "应为torch.Size([2,64,64])。层放在接收端恢复token之后、首个注意力块之前。", "15": "初始应为True；训练后不要求True，优化器会更新门控参数。"}</script></div>
+<pre class="toy-output">torch.Size([2, 64, 64])
+True</pre>
+<p><strong>参数账：</strong>第一层 1×16+16=32；第二层 16×64+64=1088；总共 1120 个参数。ReLU 和 Tanh 没有可训练参数。新增参数需要进入优化器；只生成系数而没有把门控注册到模型里，训练就不会按预期更新它。</p>
+<div class="callout warn"><span class="co-title">门控与归一化，别凭直觉下结论</span>这里做的是接收端特征缩放，不是增加发射功率。若在发端把所有符号一起乘同一个正数，后续功率归一化会消掉这一倍率（忽略 eps 的微小影响）。LayerNorm 也会抵消整体缩放的很大一部分，因此本设计使用逐维系数；它放在 Pre-LN block 前时还会影响残差支路。是否有效只能通过对照实验判断。</div>
+<p><strong>为什么第一步里某些梯度恰好为零：</strong>末层权重初始化为零，第一次反传时前一层的梯度可能为零；末层先得到更新，后续梯度才能继续影响前一层。不要把“第一步所有层都必须非零”当验收条件。应检查梯度有限、未被 detach 截断，并确认若干次更新后门控能变化。冻结权重与切断输入梯度也不是同一件事。</p>
+<p class="ep-ref">完整局部跑码件：<a href="demos/demo_ch4_snr_gate.py">demo_ch4_snr_gate.py</a>。复核手算、每图广播、恒等初始化与两步梯度传播；不训练 JSCC 图像模型。</p>
+
+<h3 id="ch4-budget">4.8 patch 改小了，究竟多花在哪儿</h3>
+<p>仍是同一张 32×32 RGB 图，固定 d=64、h=4。p 是小块边长，N=(32/p)² 是块数。改 p 同时改变 token 数、每块像素数和展平长度，<strong>当前 V1 的瓶颈参数也会跟着变</strong>。</p>
+<div class="formula-card"><div class="f-head"><span class="f-tag">算法 4-4 · 三笔不同的预算</span></div><div class="math-display">N=(32/p)^2,\quad D=Nd</div><p>D 是进入展平瓶颈的特征总数；源分量数 n_source=3×32×32=3072 始终不变。</p><div class="math-display">\text{单图单层注意力分数数目}=hN^2</div><p>这是关系表的元素数，不是整个模型的 FLOPs 或显存；实际注意力实现可能不显式存整张表。</p><div class="math-display">P_{\mathrm{bottleneck}}=(Dk+k)+((k+2)D+D)</div><p>前一项是发送 Linear(D,k)，后一项是接收 Linear(k+2,D)，两项都含偏置；这里不统计其他层。</p></div>
+<div class="viz-panel" id="viz-patch-budget"><div class="vp-head"><span class="vp-title">交互 8 · 改 patch 与 k，逐项算出代价</span></div><div class="vp-body"><div class="tl-controls"><label for="tl-patch">patch 边长 p <select id="tl-patch"><option value="2">2</option><option value="4" selected>4</option><option value="8">8</option></select></label><label for="tl-k">发送实数数 k <select id="tl-k"><option value="128">128</option><option value="256" selected>256</option><option value="512">512</option></select></label></div><div class="tl-metrics"><div class="tl-metric">每图 token 数 N<b id="tl-token-count"></b></div><div class="tl-metric">四头、单图、单层分数数目<b id="tl-score-count"></b></div><div class="tl-metric">两个瓶颈 Linear 参数合计<b id="tl-param-count"></b></div></div><output id="tl-budget-result" aria-live="polite"></output><p class="tl-note" id="tl-budget-warning"></p></div></div>
+<table class="map-table"><tr><th>p（k=256）</th><th>N</th><th>hN²</th><th>两个瓶颈层参数</th></tr><tr><td>2</td><td>256</td><td>262144</td><td>8438016</td></tr><tr><td>4</td><td>64</td><td>16384</td><td>2109696</td></tr><tr><td>8</td><td>16</td><td>1024</td><td>527616</td></tr></table>
+<p>p 从 4 降到 2，token 数变成 4 倍，关系表元素变成 16 倍。p 较小，空间分组更细；但初始切块本身是可逆重排，不会凭空增加图像信息。重建质量由投影、瓶颈、训练共同决定。若 p=2 表现更好，也要检查它是否只是用了更多参数。</p>
+<ol class="steps"><li><strong>先固定 k：</strong>比较 p=2/4/8，在相同信道使用次数下记录质量、完整参数量与耗时。这是“整套配置”对比，不能声称只改变了局部感受野。</li><li><strong>再固定 p=4：</strong>分别训练 k=128/256/512，对应实数使用比 1/24、1/12、1/6。使用次数变多时，固定每符号功率也会使每图总能量增大，需说明预算口径。</li><li><strong>需要隔离 patch 影响时：</strong>另设计近似参数匹配的配置，记录宽度与层数如何调整。参数量、计算量和训练时间无法保证同时完全相等，报告各自实测值。</li></ol>
+<p class="ep-ref">预算跑码件：<a href="demos/demo_ch4_budget.py">demo_ch4_budget.py</a>，用实际 nn.Linear 参数数核对公式，并对 p=2/4/8 分别检验切块与拼回。</p>
+
+<h3 id="ch4-experiments">4.9 怎样做对照，才能知道改进来自哪里</h3>
+<p><strong>先只选 AWGN、p=4、k=256。</strong>把基础模型与训练流程跑稳以后，再扩展维度。这里的“消融”就是每次拿掉或加入一个组件，看指标变化，避免同时更换骨干、损失和信道。</p>
+<table class="map-table"><tr><th>实验名</th><th>结构与条件</th><th>主要比较</th></tr><tr><td>V0</td><td>CNN；接收端拼接两个 SNR 特征</td><td>作为已有基线</td></tr><tr><td>V1-base</td><td>基础 Transformer；同样拼接条件</td><td>与 V0 比较结构、质量和开销</td></tr><tr><td>V1-gate</td><td>与 V1-base 相同，再加一处接收端门控</td><td>条件调节有没有增益，值不值额外开销</td></tr><tr><td>V1-constant（后做）</td><td>保留门控网络，输入固定条件；原有拼接仍用真实估计值</td><td>与 V1-gate 比较，区分动态门控和新增参数的作用</td></tr></table>
+<p>V1-constant 仍能学到固定缩放，因此不是“完全没有门控”。如果想测试网络整体是否需要 SNR，必须另外同时处理拼接和门控两条路径，不能只删掉一条就称为无 SNR 模型。</p>
+<ol class="steps"><li><strong>保持同一数据划分与训练设置：</strong>随机 SNR 范围、优化器、更新次数、检查点选择规则相同；超参数按验证集选，测试集不参与挑选。额外报告训练耗时，不能把相同步数误称为相同计算成本。</li><li><strong>主曲线：</strong>测试 SNR=0/5/10/15/20 dB，逐图 PSNR 聚合规则沿用第 3 章；同时记录重建样图、参数量与推理时延。</li><li><strong>重复来源写清：</strong>重复训练种子反映训练波动，固定检查点重复信道噪声反映信道随机性，两者分开报告。有条件时做 3 个训练种子；只有一个时如实注明。</li><li><strong>配对噪声：</strong>相同 k 的比较尽量复用显式生成的同一噪声张量。仅设置相同随机种子，未必能保证不同代码消耗随机数后仍得到相同噪声。</li><li><strong>测耗时：</strong>同设备、分辨率与 batch，先预热；GPU 计时前后同步。分别报编解码器耗时，说明是否计入传输，不能直接与别人在另一块 GPU 上的毫秒数比较。</li></ol>
+<p><strong>建议每行实验记录保存：</strong>模型名、训练种子、检查点、p/d/头数/层数/k、实数符号口径、SNR_true、SNR_est、测试噪声种子、PSNR、完整参数量、batch 与设备、编解码毫秒数。没有测到的列留空并注明，不填预期值。</p>
+<h4>4.9.1 基础结果出来后，再做一次“信道信息告诉错了”</h4>
+<p>把真实 SNR 固定为 10 dB，把接收端估计分别设为 5、10、15 dB。<strong>拼接与门控都接收同一个错误估计</strong>，信道仍按 10 dB 加噪。如果模型依赖精确信息而明显退化，再考虑训练时扰动估计值；这时 V1-base 与 V1-gate 都要有对应训练对照。它是本页后续实验建议，没有预先保证鲁棒性提升。</p>
+<div class="callout tip"><span class="co-title">结果没有变好，也可以得到可靠结论</span>若 gate 没涨分，检查它是否更新、两条条件输入是否重复、当前任务是否已经足够简单；若涨分却显著变慢，把这个代价报出来。V1 没赢 V0 时保留结果，分析参数、优化和数据范围，不把“Transformer 一定更强”作为验收标准。</div>
+
+<h3 id="ch4-reading">4.10 你的 V1 与论文分别对应到哪里</h3>
+<p>本节依据你论文库中的 DeepJSCC、ADJSCC、SwinJSCC 卡片，并对照原文。读论文时先画出它的输入、瓶颈与信道信息入口，再决定哪些思想适合你的教学模型。</p>
+<table class="map-table"><tr><th>资料</th><th>本页借鉴的内容</th><th>阅读时的边界</th></tr><tr><td><a href="https://arxiv.org/abs/1809.01733">DeepJSCC · 1809.01733</a></td><td>编码器—功率约束—信道—解码器联合训练</td><td>本页 V0 是简化教学结构；符号实/复计数见第 1 章</td></tr><tr><td><a href="https://arxiv.org/html/2012.00533v3">ADJSCC · 2012.00533</a></td><td>让特征处理随 SNR 条件变化</td><td>原文 AF 模块结合特征统计与 SNR；本节小门控不是逐层复现</td></tr><tr><td><a href="https://arxiv.org/html/2308.09361v2">SwinJSCC · 2308.09361</a></td><td>Transformer 骨干与信道、速率适配的组合思路</td><td>原文是层级 Swin 和 ModNet；本页是固定尺寸、全局注意力与展平瓶颈</td></tr><tr><td><a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html">PyTorch 官方接口</a></td><td>batch_first、norm_first、nhead 的实际含义</td><td>API 名称不是通信角色名；层参数是否共享要自行核对</td></tr></table>
+<p><strong>为什么先学基础 Transformer，再看 Swin：</strong>当前 32×32 教学例子只有 64 个 token，容易逐轴检查。大图全局注意力的关系表迅速增长；Swin 使用局部窗口、移位窗口与层级特征，结构更复杂。窗口大小、patch 大小和层级合并是不同概念，不要把 patch 改大就称作 Swin。</p>
+<p><strong>后续顺序：</strong>基础 V1 → 单处接收端 SNR 门控 → patch/k 对照 → 再按需要学习 Swin 层级结构或单模型变码率。当前固定 k 的模型改 Linear 后重训，只是多种固定预算实验；要做单模型变码率，需要专门的训练与接收接口，不能截短现有输出冒充。</p>
+<p>这些工作提供方法依据，不提供你模型的成绩。没有完成训练前，不给 V1 写上“领先多少 dB”；SNR 门控、Transformer 骨干也都是已有研究方向，复试应讲清你亲手实现了什么、验证了什么。</p>
+
+<h3 id="ch4-check">4.11 学到这里，用六个问题收尾</h3>
+<details class="quiz-item"><summary>① 为什么 3072 个像素分量先变成 4096 个特征，还能叫压缩传输？</summary><div class="ans">内部特征可以更宽；最后只发送 k=256 个实数。压缩预算看穿过信道的量，不看中间层最大维度。</div></details>
+<details class="quiz-item"><summary>② tokens=(2,64,64)，g=(2,64)，为什么不能直接相乘？</summary><div class="ans">广播从末维向前对齐，第二轴会遇到64与2不兼容。应把g变成(2,1,64)，让每张图自己的64维系数复用到64块；不能依赖某些相等尺寸碰巧不报错。</div></details>
+<details class="quiz-item"><summary>③ 门控 1120 个参数，为什么发送符号仍然是256个？</summary><div class="ans">1120是存储在接收模型里的权重数量，不是每张图要发送的数据。它只处理收到的特征，不改变k；真实系统另需说明模型部署与SNR估计成本。</div></details>
+<details class="quiz-item"><summary>④ 把实际10 dB告诉网络为5 dB，应该改哪两处、保持哪一处？</summary><div class="ans">拼接特征和门控都使用5 dB估计；信道噪声继续由真实10 dB生成。不要在同一次实验偷偷把两条路径中的一条留成完美信息。</div></details>
+<details class="quiz-item"><summary>⑤ p从4变2，关系表为什么增至16倍，而不是4倍？</summary><div class="ans">N从64变256，是4倍；每个query都和每个key配对，所以N²是16倍。完整模型的计算和显存还包括投影、FFN和瓶颈，不能都按16倍估计。</div></details>
+<details class="quiz-item"><summary>⑥ 只换一个SNR门控，就能说复现了SwinJSCC吗？</summary><div class="ans">不能。骨干、窗口与层级结构、调制模块、预算和训练协议都需要逐项对应。本页V1是受文献启发的教学设计。</div></details>
+</section>
+
+  <!-- ================= CH5 验收 ================= -->
+<section class="chapter" id="ch5">
+  <h2><span class="chno">第 5 章</span>四关卡：独立写代码验收</h2>
+  <div class="callout summary"><span class="co-title">📌 验收标准</span>关卡 1~3 全过 + 关卡 4 在 90 分钟内独立写出（可查 API 速查表，不可看本页代码卡和任何参考仓库）= 你已经具备 W1 的全部能力，寒假直接开跑实验。</div>
+  <table class="map-table">
+    <tr><th>关卡</th><th>内容</th><th>通过标准</th></tr>
+    <tr><td class="rowhead">1</td><td>白板画 JSCC 系统框图（交互 1 的管线）</td><td>五个模块+数据形状全对，讲出每个模块「为什么在」</td></tr>
+    <tr><td class="rowhead">2</td><td>默写 2.8 的形状流水账（k=256 与 k=85 各一遍）</td><td>9 行全对，特别是不带提示算对 k+2 和 4096 的来历</td></tr>
+    <tr><td class="rowhead">3</td><td>默写公式：功率归一化 / σ²-SNR 换算 / PSNR / 瑞利+均衡</td><td>四组全对（算法 1-1/1-2/1-3 + 3.2）</td></tr>
+    <tr><td class="rowhead">4</td><td>限时 90 分钟，从空文件写出 channel.py + model_v0.py + train_v0.py 并跑通 3 个 epoch</td><td>跑通且 loss 下降。报错自己修（查 API 表）</td></tr>
+  </table>
+  <h3>关卡 4 的排查清单（90 分钟里卡住时按序查）</h3>
+  <ol class="steps">
+    <li>loss 不降：先查值域咬合（2.5 节的坑：ToTensor 后有没有多加 Normalize）</li>
+    <li>loss 为 nan：先定位第一个非有限张量；检查 power_norm 的 eps、信道均衡的 clamp_min 与梯度大小。极小 h 会放大噪声，不能仅加 eps 就宣称问题解决</li>
+    <li>形状报错：逐层 print(x.shape) 对 2.8 总表，错在哪层修哪层</li>
+    <li>loss 降得极慢：lr 调 3e-4 再试；确认用的是 AdamW 不是 SGD</li>
+    <li>CUDA 报错：snr_features 是 CPU 张量，<code>.to(s.device)</code> 在不在（2.4 代码卡注解）</li>
+  </ol>
+<h3 id="ch5-v1">V1 追加验收：从能读懂到能自己解释</h3><p>前面四关验证 V0 基础。完成第 4 章后，再逐项完成下面的 V1 验收；不把“看过页面”当成已经掌握。</p><ol class="steps"><li>不看图写出十二步数据流，解释 3072、64、48、4096、256、258 各自是什么。</li><li>亲手组装 V1-base，在 batch=1/2 下核对输出尺寸与功率；做无噪和 AWGN 前向反传，检查梯度有限，小批拟合用于排错。</li><li>用两块四维数字手算门控，再说明 (B,d) 为什么变成 (B,1,d)。记录局部跑码件结果。</li><li>核对 V1-gate 只新增接收端门控，参数进入优化器；解释1120个参数为何不增加k。</li><li>完成一组真实 V0/V1-base 对照后再训练 V1-gate。报告实际质量、参数、耗时与随机重复情况，无预设胜负。</li><li>白板解释本教学V1与SwinJSCC的差别，指出什么信息可以到达接收端。</li></ol></section>
+
+<!-- ================= 附录 A 术语卡 ================= -->
+<section class="chapter" id="apA">
+  <h2><span class="chno">附录 A</span>术语速查卡</h2>
+  <table class="map-table">
+    <tr><th>术语</th><th>一句话定义</th><th>本页位置</th></tr>
+    <tr><td>(B,C,H,W)</td><td>PyTorch 图像张量的四维约定：批×通道×高×宽</td><td>1.0</td></tr>
+    <tr><td>dB（分贝）</td><td>功率比取 log10×10；+10dB=×10，+3dB≈×2，反解 σ²=10^(−SNR/10)</td><td>1.1</td></tr>
+    <tr><td>E[x²] / 功率</td><td>平方的平均；1Ω 电阻上就是平均功率，噪声的 E[n²]=σ²</td><td>1.3</td></tr>
+    <tr><td>复高斯 CN(0,1)</td><td>实部、虚部独立且各为 N(0,1/2)，总平均功率为 1</td><td>1.2</td></tr>
+    <tr><td>JSCC / deep JSCC</td><td>联合信源信道编码：编码器和解码器联合训练，中间直接过信道，不做「先压缩成比特再编码」的分离设计</td><td>1.5</td></tr>
+    <tr><td>信道符号</td><td>编码器输出的连续实数（k 个），不是比特不是像素</td><td>1.6</td></tr>
+    <tr><td>带宽比 k/n</td><td>本页：实数使用次数 k / 源分量数 n=3HW；复数文献需另换口径</td><td>1.6</td></tr>
+    <tr><td>功率归一化</td><td>把符号平均功率归一到 1，SNR 才有意义（平均功率约束）</td><td>1.7</td></tr>
+    <tr><td>AWGN</td><td>加性高斯白噪声：y = s + n，n~N(0,σ²)，σ²=10^(-SNR/10)</td><td>1.8</td></tr>
+    <tr><td>瑞利衰落</td><td>幅度 h=√((a²+b²)/2)，a、b 独立标准高斯；单个高斯取绝对值不是瑞利</td><td>1.9</td></tr>
+    <tr><td>CSI / 均衡</td><td>信道状态信息（知道 h）；均衡=接收端除掉 h 的影响</td><td>1.9</td></tr>
+    <tr><td>nn.Module</td><td>网络零件的基类：__init__ 摆零件、forward 定数据流、参数自动登记</td><td>2.0.1</td></tr>
+    <tr><td>keepdim 陷阱</td><td>mean 后形状 (B,) 可能报错，也可能 B=k 时按列静默错；归一化保留 (B,1)</td><td>2.0.2</td></tr>
+    <tr><td>epoch / batch / iteration</td><td>全数据过一遍 / 一批 N 张 / 搓一批更新一次；CIFAR+256 → 1 epoch=196 iter</td><td>2.0.3</td></tr>
+    <tr><td>训练五连</td><td>forward → loss → zero_grad → backward → step，梯度默认累加所以必须清</td><td>2.0.4</td></tr>
+    <tr><td>自编码器</td><td>编码-瓶颈-解码的压缩还原网络，JSCC 把信道插在瓶颈处</td><td>2.1</td></tr>
+    <tr><td>转置卷积</td><td>可学习的放大器；4/2/1 参数组合 = 尺寸×2，与卷积减半互为镜像</td><td>2.2</td></tr>
+    <tr><td>SNR 注入</td><td>把 1/SNR 和其对数作为两个标量特征喂给解码器</td><td>2.4</td></tr>
+    <tr><td>PSNR</td><td>峰值信噪比 = 10·log₁₀(1/MSE)（像素 [0,1]），重建质量的标准指标</td><td>3.2</td></tr>
+    <tr><td>悬崖效应</td><td>固定码率数字链路失配时质量可能骤降；发生位置与强度需实验验证</td><td>1.5 / 3.3</td></tr>
+  <tr><td>patch / token</td><td>图像小块 / 小块投影成的向量；N为块数，d为特征宽度</td><td><a href="#ch4-patch">4.1</a></td></tr><tr><td>Pre-LN</td><td>注意力或FFN子层前做LayerNorm，残差支路保持连接</td><td><a href="#ch4-attention">4.4</a></td></tr><tr><td>瓶颈</td><td>把Nd个内部特征映射为k个实际发送数的位置</td><td><a href="#ch4-bottleneck">4.5</a></td></tr><tr><td>SNR_true / SNR_est</td><td>真实加噪条件 / 接收端得到的条件估计，两者可不同</td><td><a href="#ch4-condition">4.7</a></td></tr><tr><td>门控 / 条件调节</td><td>由条件生成逐特征维度的系数，调整token而不改变k</td><td><a href="#ch4-condition">4.7</a></td></tr><tr><td>MLP / Tanh</td><td>小型全连接网络 / 把输出平滑限制到−1至1的函数</td><td><a href="#code-snr-learnable">4.7.3</a></td></tr><tr><td>消融实验</td><td>控制其他条件，每次加入或去掉一个组件观察差异</td><td><a href="#ch4-experiments">4.9</a></td></tr><tr><td>Swin / 窗口注意力</td><td>在局部窗口内算注意力并利用移位窗口交换信息的层级架构</td><td><a href="#ch4-reading">4.10</a></td></tr></table>
+</section>
+
+<div class="callout tip" id="sources"><span class="co-title">核对来源与适用范围</span><a href="https://arxiv.org/html/1809.01733v3">原始 Deep JSCC 论文：系统定义与分离式基线</a> · <a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.rayleigh.html">SciPy：瑞利分布</a> · <a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html">PyTorch：TransformerEncoderLayer</a>。新增信道调节与 Transformer 文献逐项对应见 <a href="#ch4-reading">4.10</a>。本页 V0/V1 是教学结构；演示验证的是公式与局部机制，不代表完成论文复现或完整训练。</div>
+</div>
+</main>
+
+<button id="backtop" title="返回顶部">↑</button>
+</body>
+</html>
