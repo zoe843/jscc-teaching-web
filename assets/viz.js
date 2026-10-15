@@ -56,7 +56,7 @@
       io: "输出被污染的 y" },
     { name: "解码器",    shape: "(B,3,32,32)", desc: "先拼 2 个 SNR 特征（知道信道多差），再全连接 + 三层转置卷积 + Sigmoid 还原图像。",
       io: "输出重建图 x̂" },
-    { name: "重建 x̂ + 任务", shape: "(B,3,32,32)", desc: "与原图算 MSE/PSNR（图1 曲线）；寒假后接论文1 的 YOLO26m 测 mAP-SNR（图3，原创点）。",
+    { name: "重建 x̂ + 任务", shape: "(B,3,32,32)", desc: "与原图算 MSE/PSNR；后续可接 YOLO26m 测 mAP-SNR，评估传输对检测的影响。是否构成研究贡献，需结合已有工作和实验判断。",
       io: "评测：PSNR / SSIM / mAP" }
   ];
   function initPipeline() {
