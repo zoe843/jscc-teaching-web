@@ -1,0 +1,78 @@
+/* Inline teaching figures. All selectors are scoped to avoid changing the course. */
+.jv { --jv-teal:#0e7490; --jv-blue:#2563eb; --jv-amber:#b45309; --jv-purple:#7c3aed; margin-left:0; margin-right:0; }
+.jv > figcaption { padding:0 18px 16px; }
+.jv .vp-title { line-height:1.6; }
+.jv .jv-intro { margin:0 0 14px; font-size:14px; color:var(--ink-2); }
+.jv .jv-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:12px 0; }
+.jv button,.jv select { font:inherit; font-size:13px; line-height:1.5; color:var(--ink); background:#fff; border:1px solid #b5cbd5; border-radius:6px; padding:8px 12px; min-height:40px; }
+.jv button { cursor:pointer; }
+.jv button:hover { border-color:var(--jv-teal); }
+.jv button[aria-pressed=true] { background:var(--jv-teal); color:white; border-color:var(--jv-teal); }
+.jv button:disabled { opacity:.45; cursor:default; }
+.jv :is(button,select,input):focus-visible { outline:3px solid #2563eb; outline-offset:3px; }
+.jv label { font-size:13px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.jv input[type=range] { accent-color:var(--jv-teal); width:170px; max-width:100%; }
+.jv .jv-stage { background:#fff; border:1px solid var(--line); padding:18px; border-radius:8px; margin-top:12px; }
+.jv .jv-cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+.jv .jv-cols > * { min-width:0; }
+.jv .jv-label { display:block; font-size:13px; color:var(--ink-2); margin:0 0 8px; }
+.jv .jv-code { font:13px/1.8 var(--mono); overflow-wrap:anywhere; color:#155e75; }
+.jv .jv-grid { display:grid; gap:4px; width:100%; max-width:360px; margin:8px 0; }
+.jv .jv-cell { min-width:0; padding:9px 2px; text-align:center; font:13px/1.5 var(--mono); color:#164e63; background:#e5f3f8; border:1px solid #bddce8; border-radius:4px; }
+.jv button.jv-cell { width:100%; min-height:42px; }
+.jv .jv-cell.g1 { background:#f0eaff; border-color:#d4c2f1; color:#5b21b6; }
+.jv .jv-cell.g2 { background:#e5f6ef; border-color:#b2dfcd; color:#065f46; }
+.jv .jv-cell.g3 { background:#fff1dd; border-color:#efd0a0; color:#92400e; }
+.jv .jv-cell.padding { background:#f7f8fa; color:#7b8794; border-style:dashed; }
+.jv .jv-cell.focus { box-shadow:inset 0 0 0 2px #b45309; color:#78350f; background:#fff1dd; }
+.jv .jv-cell.dim { opacity:.45; }
+.jv .jv-vector .jv-grid { max-width:100%; gap:2px; }
+.jv .jv-vector .jv-cell { font-size:11px; padding:9px 0; }
+.jv .jv-flow { display:flex; align-items:stretch; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.jv .jv-node { flex:1 1 100px; min-width:0; border:1px solid #bbd3df; border-top:3px solid #0e7490; background:#f1f8fb; padding:12px 9px; font-size:13px; text-align:center; border-radius:4px; overflow-wrap:anywhere; }
+.jv .jv-node b { display:block; margin-bottom:4px; }
+.jv .jv-node small { display:block; font-size:12px; color:var(--ink-2); line-height:1.7; }
+.jv .jv-node.active { background:#e0f2f7; outline:2px solid #0e7490; outline-offset:1px; }
+.jv .jv-node.channel { background:#fff6e7; border-color:#d97706; }
+.jv .jv-arrow { align-self:center; color:#638191; font-size:20px; }
+.jv .jv-register { min-height:142px; border:2px solid #bad9e2; padding:14px; background:#f3fafc; border-radius:8px; }
+.jv .jv-register b { display:block; color:#155e75; }
+.jv .jv-register ul { padding-left:19px; margin:8px 0 0; font-size:13px; }
+.jv .jv-caption { font-size:12.5px; color:var(--ink-2); line-height:1.8; margin:12px 0 0; }
+.jv .jv-result { display:block; margin-top:14px; padding:12px 14px; line-height:1.85; border-left:3px solid #0e7490; background:#eaf5f9; font-size:14px; overflow-wrap:anywhere; }
+.jv .jv-result.error { background:#fff0ec; border-color:#c2410c; color:#9a3412; }
+.jv .jv-batch { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+.jv .jv-photo { width:43px; height:46px; display:grid; place-items:center; border:1px solid #bacedd; border-bottom:5px solid #b8d4df; border-radius:4px; background:#f5f8fc; font-size:12px; color:#37546a; }
+.jv .jv-photo.active { background:#daf0f5; border-color:#0e7490; color:#0e5265; font-weight:700; }
+.jv .jv-photo.done { background:#edf4f1; color:#52665b; border-color:#cedbd4; }
+.jv .jv-bars { display:grid; gap:12px; }
+.jv .jv-bar-label { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px; font-size:13px; }
+.jv .jv-track { height:22px; background:#edf1f6; border:1px solid #d5e0e8; border-radius:4px; overflow:hidden; margin-top:4px; }
+.jv .jv-fill { height:100%; min-width:2px; background:#0e7490; }
+.jv .jv-fill.amber { background:#b45309; }
+.jv .jv-fill.purple { background:#7c3aed; }
+.jv .jv-number { font-size:22px; font-weight:750; color:#155e75; font-variant-numeric:tabular-nums; }
+.jv .jv-residual { display:grid; grid-template-columns:50px 1fr 50px; gap:8px; align-items:stretch; margin:10px 0; font-size:12px; }
+.jv .jv-skip { border-left:2px solid #b45309; border-top:2px solid #b45309; border-bottom:2px solid #b45309; display:flex; align-items:center; justify-content:center; color:#92400e; border-radius:6px 0 0 6px; }
+.jv .jv-path { display:grid; gap:6px; }
+.jv .jv-path span { padding:7px; background:#eef6fa; border:1px solid #d0e1ea; text-align:center; }
+.jv .jv-add { align-self:center; border:2px solid #b45309; border-radius:50%; width:35px; height:35px; display:grid; place-items:center; font-size:21px; color:#92400e; }
+.jv .jv-links { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:12px; font-size:13px; }
+.jv-index { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; }
+.jv-index a { padding:6px 10px; border-bottom:2px solid #b8dbe4; color:#155e75; text-decoration:none; font-size:13px; }
+@media(max-width:700px) {
+  .jv .jv-cols { grid-template-columns:1fr; gap:14px; }
+  .jv .jv-stage { padding:12px; }
+  .jv .jv-cell { font-size:12px; padding:8px 1px; }
+  .jv .jv-flow { display:grid; grid-template-columns:1fr; gap:6px; }
+  .jv .jv-arrow { text-align:center; transform:rotate(90deg); line-height:1; }
+  .jv .jv-node { padding:9px; }
+  .jv .jv-node small { display:inline; }
+  .jv .jv-register { min-height:0; }
+  .jv .jv-controls { gap:8px; }
+  .jv .jv-controls label { width:100%; }
+  .jv .jv-controls select { max-width:100%; }
+  .jv .jv-result { padding:10px; font-size:13px; }
+  .jv .jv-bar-label { font-size:12px; }
+  .jv .jv-grid { max-width:100%; }
+}

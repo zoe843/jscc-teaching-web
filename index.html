@@ -6,11 +6,13 @@
 <title>Transformer × JSCC · 核心代码手写教程</title>
 <link rel="stylesheet" href="assets/style.css?v=4">
 <link rel="stylesheet" href="assets/transformer-lab.css?v=2">
+<link rel="stylesheet" href="assets/visual-companion.css?v=1">
 <link rel="stylesheet" href="assets/katex/dist/katex.min.css?v=1">
 <script src="assets/katex/dist/katex.min.js?v=1" defer></script>
 <script src="assets/app.js?v=2" defer></script>
 <script src="assets/viz.js?v=3" defer></script>
 <script src="assets/transformer-lab.js?v=1" defer></script>
+<script src="assets/visual-companion.js?v=1" defer></script>
 </head>
 <body>
 
@@ -71,7 +73,7 @@
     <span class="chip">算法卡先行 · 公式 ↔ 代码逐行对照</span>
     <span class="chip">第 5 章四关卡限时验收</span>
   </div>
-  <div class="start"><a href="#ch0">从导读开始 →</a> <a href="#ch3">评测与基线 →</a> <a href="#ch4">Transformer 版 →</a> <a href="#ch4-condition">信道感知改进 →</a></div><p style="font-size:13px">2026-10-15 校订 · Transformer 主线 · SNR 门控与 patch 预算 · 8 个交互</p>
+  <div class="start"><a href="#ch0">从导读开始 →</a> <a href="#ch3">评测与基线 →</a> <a href="#ch4">Transformer 版 →</a> <a href="#ch4-condition">信道感知改进 →</a></div><p style="font-size:13px">2026-10-18 图解更新 · 第 2—5 章新增 12 组图解 · 共 20 个交互</p>
 </div>
 
 <!-- ================= CH0 导读 ================= -->
@@ -371,6 +373,7 @@ python demo_ch1_channels.py</pre>
   <div class="callout summary"><span class="co-title">📌 本章结论</span>
   把 V0 的全部代码写成 4 块：编码器（图→256 个符号）、SNR 注入（告诉解码端信道多差）、解码器（符号→图）、训练循环。全部是「卷积下采样 + 全连接 + 对称还原」这一个套路的组合。<strong>学完本章 + 第 1 章 = 你已经能独立写出 V0 的 150 行核心代码</strong>，第 5 章限时验收。</div>
 
+<nav class="jv-index" aria-label="第二章图解导航"><a href="#fig-module">super 与登记簿</a><a href="#fig-tensor">reshape 与张量操作</a><a href="#fig-loader">数据分批</a><a href="#fig-conv">卷积窗口</a><a href="#fig-snr">SNR 拼接</a><a href="#fig-train">训练五连</a></nav>
   <h3>2.0 PyTorch 先修二：本章代码的全部前置（五个小节）</h3>
   <p>你在 transformer-course-web 2.0 节学过 Tensor/forward/Linear/unsqueeze/broadcast——那是「读懂别人代码」的量级。本章要<strong>自己从零写</strong>，所以前置加码成五小节，每节都是后面代码卡里真实出现的东西。先给一张总索引表（读卡时回来查），然后逐节展开：</p>
   <table class="map-table">
@@ -405,6 +408,15 @@ print(list(net.parameters()))         # ⑦ fc 的权重和偏置自动登记在
   <div class="callout analogy"><span class="co-title">🎓 C 类比</span>
   一个 nn.Module ≈ 一个 struct：<code>__init__</code> 是 malloc+成员初始化，<code>self</code> 就是 this 指针，<code>forward</code> 是对结构体的操作函数，<code>super().__init__()</code> 是先调父类的构造函数（C 里没有继承，但「先初始化基座再填自己的成员」的心智模型一样）。<code>nn.Sequential(a, b, c)</code> 则是一个「零件串联盒」：把几个零件排进盒子，forward 时自动依次过——等价于手写 <code>return c(b(a(x)))</code>。</div>
 
+
+<figure class="viz-panel jv" id="fig-module" aria-labelledby="jv-module-title">
+  <div class="vp-head"><span class="vp-title" id="jv-module-title">图解 2-A · super() 怎样为网络准备“登记簿”</span></div>
+  <div class="vp-body"><p class="jv-intro">从创建对象到找到参数，一步一步看。所有步骤操作的是同一个 ToyNet 对象。</p><div class="jv-controls" id="jv-module-tabs" role="group" aria-label="演示步骤"><button type="button" aria-pressed="false">创建 self</button><button type="button" aria-pressed="false">父类初始化</button><button type="button" aria-pressed="false">登记 fc</button><button type="button" aria-pressed="false">查找参数</button></div><div class="jv-controls"><button type="button" id="jv-module-next">下一步 / 回到开头</button></div>
+    <div class="jv-stage" id="jv-module-stage"></div>
+    <output class="jv-result" id="jv-module-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">fc 作为子模块登记；weight 与 bias 保存在 fc 内部。ToyNet.parameters() 会递归找它们。</figcaption>
+</figure>
   <h4 id="ch2-shapes">2.0.2 形状操作五件套（含一个无声错误）</h4>
   <p>第 1 章你已经会 unsqueeze 和广播。本章代码卡新增五个操作，全部先在跑码件里玩过（<code>demos/demo_ch2_tensor_toys.py</code>，2.9 节有完整输出）。这里把<strong>行为规则</strong>逐个钉死：</p>
   <table class="kv-table">
@@ -419,6 +431,15 @@ print(list(net.parameters()))         # ⑦ fc 的权重和偏置自动登记在
   功率归一化里如果写成 <code>torch.mean(s**2, dim=1)</code>（丢掉 keepdim），得到 (B,)。<strong>当 B=k 时，(B,k) ÷ (B,) 恰好能广播，因此不报错</strong>——PyTorch 按列广播，第一列全除以第 0 个样本的 RMS、第二列全除以第 1 个样本的 RMS……每一行混着别的样本的功率，<strong>结果错得无声无息</strong>。跑码件第 4 节实测：按“除均方值”这个广播玩具，该得 [0.24, 0.32] 的一行变成了 [0.24, 1.6]（这里故意未开根号，实际 power_norm 除的是 RMS）。「报错的坑」好修，「不报错的坑」靠实验对照才抓得住——一般 B 与 k 不同且都大于 1 时会报尺寸不匹配；B=1 时又可能碰巧算对。所以要验证一般形状并保留 (B,1)，不能只试一个样本。</div>
   <p><strong>dim= 到底怎么数</strong>：张量的轴从外往里数 0,1,2……(B,3,32,32) 的 dim=0 是「批」、dim=1 是「通道」。mean(dim=1) = 把通道轴压掉（对每个位置跨通道求平均）。压掉的轴默认消失，keepdim 让它以 size=1 留下来。</p>
 
+
+<figure class="viz-panel jv" id="fig-tensor" aria-labelledby="jv-tensor-title">
+  <div class="vp-head"><span class="vp-title" id="jv-tensor-title">图解 2-B · 用同一组数字看清形状操作</span></div>
+  <div class="vp-body"><p class="jv-intro">切换操作，对照前后的轴、数值和颜色。先看 reshape 的两个参数，再看本章的其他张量操作。</p><div class="jv-controls" id="jv-tensor-tabs" role="group" aria-label="演示步骤"><button type="button" aria-pressed="false">reshape</button><button type="button" aria-pressed="false">unsqueeze</button><button type="button" aria-pressed="false">expand</button><button type="button" aria-pressed="false">cat</button><button type="button" aria-pressed="false">keepdim</button></div><div class="jv-controls" id="jv-reshape-control"><label for="jv-rows">reshape 的第一个参数<select id="jv-rows"><option value="2">2 行</option><option value="3">3 行</option><option value="4">4 行</option><option value="5">5 行（试试能不能排）</option></select></label></div>
+    <div class="jv-stage" id="jv-tensor-stage"></div>
+    <output class="jv-result" id="jv-tensor-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">注意 -1 的含义随 API 改变：reshape 中自动推算，expand 中保持该轴原大小。</figcaption>
+</figure>
   <h4 id="ch2-data">2.0.3 数据怎么进网络：Dataset / DataLoader / ToTensor</h4>
   <p>训练循环里 <code>for x, _ in loader</code> 这一行背后是三个角色，各自从零讲：</p>
   <table class="kv-table">
@@ -438,6 +459,15 @@ loader = DataLoader(train_set, batch_size=256, shuffle=True, num_workers=0)</pre
   <div class="callout warn"><span class="co-title">⚠️ Windows 专属坑：num_workers</span>
   <code>num_workers=2</code> 表示两个后台进程搬运数据（主进程专心算）。但 Windows 的多进程要求主脚本「被保护」——train_v0.py 里所有执行代码必须放在 <code>if __name__ == "__main__":</code> 里面，否则报 <code>RuntimeError: freeze_support...</code>。两种解法：加这个保护头（推荐，养成习惯），或先把 num_workers 改 0（慢但稳）。</div>
 
+
+<figure class="viz-panel jv" id="fig-loader" aria-labelledby="jv-loader-title">
+  <div class="vp-head"><span class="vp-title" id="jv-loader-title">图解 2-C · 10 张图怎样变成一批批数据</span></div>
+  <div class="vp-body"><p class="jv-intro">青色表示当前送进网络的图片，浅绿表示本 epoch 已处理的图片。最后一批可以更小。</p><div class="jv-controls"><label for="jv-batch-size">batch_size<select id="jv-batch-size"><option value="4">4</option><option value="3">3</option><option value="6">6</option></select></label><button type="button" id="jv-loader-next">取下一批</button></div>
+    <div class="jv-stage" id="jv-loader-stage"></div>
+    <output class="jv-result" id="jv-loader-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">采用 drop_last=False。为追踪编号，图中不洗牌；正文 shuffle=True 会改变每轮顺序，但不改变分批数量。</figcaption>
+</figure>
   <h4 id="ch2-loop">2.0.4 训练五连：每一步在干什么</h4>
   <div class="code-card">
     <div class="cc-head"><span class="cc-file">训练五连（骨架）</span><span class="cc-desc">本页采用的顺序；zero_grad 也可放在前向之前，但须在本次 backward 前清除旧梯度</span></div>
@@ -456,6 +486,15 @@ opt.step()                 # ⑤ 按所选优化器的规则更新参数</pre>
   </ol>
   <p>两个附属问题：<code>loss.item()</code> 把标量张量变回普通 Python 数（只取数值、甩掉计算图——统计用，省显存）；<code>model.train()</code> / <code>model.eval()</code> 是训练/推理模式开关——本模型没有 BN 和 Dropout，不写也能跑，但建议写上养成习惯（YOLO 里有 BN，忘了切 eval 会出诡异结果）。</p>
 
+
+<figure class="viz-panel jv" id="fig-train" aria-labelledby="jv-train-title">
+  <div class="vp-head"><span class="vp-title" id="jv-train-title">图解 2-F · backward 算梯度，step 才改权重</span></div>
+  <div class="vp-body"><p class="jv-intro">点五个步骤，对照数据向前、梯度向后、参数更新三个不同动作。</p><div class="jv-controls" id="jv-train-tabs" role="group" aria-label="演示步骤"><button type="button" aria-pressed="false">① 前向</button><button type="button" aria-pressed="false">② loss</button><button type="button" aria-pressed="false">③ zero_grad</button><button type="button" aria-pressed="false">④ backward</button><button type="button" aria-pressed="false">⑤ step</button></div><div class="jv-controls"><button type="button" id="jv-train-next">下一步 / 回到开头</button></div>
+    <div class="jv-stage" id="jv-train-stage"></div>
+    <output class="jv-result" id="jv-train-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">单参数 SGD 算式仅作手算示例；正文 AdamW 还包含历史状态、偏差修正和解耦权重衰减。</figcaption>
+</figure>
   <h4 id="ch2-dev">2.0.5 设备与输出：.to(DEVICE) 和 f-string</h4>
   <p><strong>设备</strong>：CPU 和 GPU 是两块独立内存，张量和模型必须待在同一块上才能运算。<code>DEVICE = "cuda" if torch.cuda.is_available() else "cpu"</code> 检测后，<code>model.to(DEVICE)</code> 和每个 batch 的 <code>x.to(DEVICE)</code> 把两者搬到同侧。忘搬其中一边，报错形如 <code>Expected all tensors to be on the same device</code>——看到它就回来查这节。SNR 特征是现造的小张量（CPU 出身），所以 2.4 代码卡里那句 <code>.to(s.device)</code> 是必备保险。</p>
   <p><strong>f-string 拆解</strong>（训练日志那行）：<code>f"epoch {epoch}  loss {total / len(loader):.5f}"</code> —— 引号前的 f 表示「花括号里是变量」：<code>{epoch}</code> 直接填值；<code>{total / len(loader):.5f}</code> 花括号里可以是表达式，<code>:.5f</code> 表示格式化成小数点后 5 位。拆成普通写法 = <code>"epoch " + str(epoch) + " loss " + str(round(avg, 5))</code>——f-string 只是省事，不是新语言。</p>
@@ -478,6 +517,15 @@ opt.step()                 # ⑤ 按所选优化器的规则更新参数</pre>
   <div class="callout tip"><span class="co-title">💡 只需记住的口诀</span>
   <code>nn.ConvTranspose2d(in_ch, out_ch, kernel_size=4, stride=2, padding=1)</code> 在默认 <code>dilation=1</code>、<code>output_padding=0</code> 下让<strong>空间边长 ×2</strong>。令输入边长为 n，输出为 <code>(n−1)×stride−2×padding+dilation×(kernel_size−1)+output_padding+1</code>。代入后：<code>(n−1)×2−2×1+1×(4−1)+0+1=2n</code>。例如 n=4，输出是 6−2+3+1=8；连续三层就是 4→8→16→32。这里的4是卷积核大小，不是输入边长n；若改了 dilation 或 output_padding，就要重新代公式。尺寸恢复不代表还原出原始像素值，具体重建仍靠训练。最后一层接 <code>nn.Sigmoid()</code> 把输出压到 (0,1)，与输入像素的值域配套。</div>
 
+
+<figure class="viz-panel jv" id="fig-conv" aria-labelledby="jv-conv-title">
+  <div class="vp-head"><span class="vp-title" id="jv-conv-title">图解 2-D · 卷积的窗口与转置卷积的重叠</span></div>
+  <div class="vp-body"><p class="jv-intro">用单通道小网格看清机制：普通卷积“圈一片、求加权和”，转置卷积“撒一片、重叠相加”。</p><div class="jv-controls" id="jv-conv-tabs" role="group" aria-label="演示步骤"><button type="button" aria-pressed="false">普通卷积：4×4 → 2×2</button><button type="button" aria-pressed="false">转置卷积：2×2 → 4×4</button></div><div class="jv-controls" id="jv-conv-picks" role="group" aria-label="选择输出或输入位置"><button type="button" aria-pressed="false">左上</button><button type="button" aria-pressed="false">右上</button><button type="button" aria-pressed="false">左下</button><button type="button" aria-pressed="false">右下</button></div>
+    <div class="jv-stage" id="jv-conv-stage"></div>
+    <output class="jv-result" id="jv-conv-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">这里只演示一个输入与输出通道、全 1 核和零偏置。V0 实际是多通道可训练卷积；恢复尺寸不保证恢复原始数值。</figcaption>
+</figure>
   <h3>2.3 编码器：3072 维 → k 个符号</h3>
   <div class="formula-card">
     <div class="f-head"><span class="f-tag">算法 2-1 · 编码器前向</span><span class="f-name">三次卷积下采样 + 展平 + 全连接（k=256 演示）</span></div>
@@ -541,6 +589,15 @@ def snr_features(snr_db):
     <script class="cc-notes" type="application/json">{"3": "噪声方差对应的特征；假定发送功率为 1。", "4": "两个特征都来自同一个标量 SNR；这里造 CPU 张量。", "5": "返回形状 (2,)。", "8": "实际使用时移到符号所在设备。", "9": "先增加 batch 轴，再 expand 成 (B,2) 的共享视图，不是复制数据。", "10": "沿特征轴拼接后为 (B,k+2)。"}</script>
   </div>
 
+
+<figure class="viz-panel jv" id="fig-snr" aria-labelledby="jv-snr-title">
+  <div class="vp-head"><span class="vp-title" id="jv-snr-title">图解 2-E · 两个 SNR 特征怎样拼到每一行后面</span></div>
+  <div class="vp-body"><p class="jv-intro">固定 B=2。蓝色是经过信道的符号，橙色是接收端按已知 SNR 算出的条件。</p><div class="jv-controls"><label for="jv-snr">接收端已知 SNR<input type="range" id="jv-snr" min="0" max="20" step="1" value="10"><span id="jv-snr-value"></span></label><label for="jv-snr-k">k<select id="jv-snr-k"><option value="256">256</option><option value="85">85</option></select></label></div>
+    <div class="jv-stage" id="jv-snr-stage"></div>
+    <output class="jv-result" id="jv-snr-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">这里按 γ=P/σ²、P=1 计算；条件接口沿用正文的 [1/γ, log₁₀(1/γ+1e−8)]，并非所有 JSCC 模型的统一格式。</figcaption>
+</figure>
   <h3>2.5 解码器：从被污染的符号还原图像</h3>
   <div class="formula-card">
     <div class="f-head"><span class="f-tag">算法 2-3 · 解码器前向</span><span class="f-name">编码器的镜像：全连接 + 三次转置卷积</span></div>
@@ -770,16 +827,43 @@ def psnr_per_image(x_hat, x):
     mse = squared.mean(dim=(1, 2, 3))
     return -10.0 * torch.log10(mse)</pre><script class="cc-notes" type="application/json">{"3": "逐格相减，形状仍是 (B,C,H,W)。调用前两张图必须尺寸、值域、通道顺序一致。", "5": "对通道、高、宽求平均，保留 batch；每张图得到一个 MSE，不能把整批先平均。", "6": "MAX=1，因此 10 log10(1/MSE)=-10 log10(MSE)。完全相等时 MSE=0，数学结果是 +∞；演示保留这个结果。"}</script></div>
 <div class="callout warn"><span class="co-title">两个“平均”不是同一个结果</span>两张图的 MSE 分别是 0.01、0.1，各自 PSNR 为 20、10 dB，<strong>逐图 PSNR 均值=15 dB</strong>。先平均 MSE 得 0.055 再换算，得到约 <strong>12.596 dB</strong>。两者都是可定义的指标，但不能混用。本页曲线采用逐图 PSNR 的算术平均。若用 clamp 避免 log(0)，要披露阈值及对应的分数上限。</div>
+
+<figure class="viz-panel jv" id="fig-metric" aria-labelledby="jv-metric-title">
+  <div class="vp-head"><span class="vp-title" id="jv-metric-title">图解 3-A · 从四个像素一直算到 PSNR</span></div>
+  <div class="vp-body"><p class="jv-intro">拖动重建误差，逐格查看差值平方，再求 MSE 和 PSNR。这里的数字全按公式计算。</p><div class="jv-controls"><label for="jv-error">每个像素增加的误差<input type="range" id="jv-error" min="0" max="0.2" value="0.1" step="0.01"><span id="jv-error-value"></span></label></div>
+    <div class="jv-stage" id="jv-metric-stage"></div>
+    <output class="jv-result" id="jv-metric-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">灰度小图只为简化手算；RGB 图同样对全部 3HW 个分量求平均。原值与重建值始终位于 [0,1]。</figcaption>
+</figure>
 <div class="viz-panel" id="viz-psnr"><div class="vp-head"><span class="vp-title">交互 4 · 拖动误差，看 MSE 怎样变成 dB</span></div><div class="vp-body"><label for="psnr-mse">MSE（对数刻度）</label><input id="psnr-mse" type="range" min="-4" max="-1" value="-2" step="0.05"><output id="psnr-result" aria-live="polite"></output><p class="viz-note">这里按公式计算，不代表训练得到的性能。误差功率缩小 10 倍，PSNR 增加 10 dB。</p></div></div>
 <h3 id="ch3-eval">3.3 从一次 forward 到可信的一条曲线</h3>
 <ol class="steps"><li><strong>先划分数据：</strong>训练集更新权重，验证集选超参数与检查点，测试集只做最终报告。不能看着测试分数反复挑最好的一轮。</li><li><strong>冻结模型行为：</strong>调用 <code>model.eval()</code>；评测放在 <code>torch.no_grad()</code> 或 inference_mode 中。eval 不等于关闭梯度，也不会关闭你自定义信道里的 randn。</li><li><strong>一次只改一个条件：</strong>固定权重和 k，测试 SNR 依次取 0、5、10、15、20 dB。每个点遍历同一测试集，噪声重新采样。</li><li><strong>按图累计：</strong>对每张图算 PSNR，累加分数并累加图数，最后相除。不要把不同大小 batch 的均值再等权平均，最后一批可能比较小。</li><li><strong>测随机波动：</strong>例如预先指定 3 个种子，各完成一次全测试集评测；报告 3 次均值的平均与标准差。控制数据顺序、种子与噪声形状；精确配对比较时复用显式生成的噪声。同一整数种子不保证不同架构消耗随机数的方式相同。</li><li><strong>留下证据：</strong>记录模型名、检查点、实数符号数 k、SNR 定义、信道、CSI 假设、测试集、种子、逐图均值 PSNR、重复次数和标准差。CSV 一行对应一个明确实验条件。</li></ol>
 <p><strong>C 类比：</strong>统计就是 <code>sum += 每张图的分数; count += 图数;</code>，最后 <code>sum/count</code>。测试协议像通信实验的仪器设置，换旋钮之前先固定其余条件。</p>
+
+<figure class="viz-panel jv" id="fig-eval" aria-labelledby="jv-eval-title">
+  <div class="vp-head"><span class="vp-title" id="jv-eval-title">图解 3-C · 可信评测要走完哪四步</span></div>
+  <div class="vp-body"><p class="jv-intro">把“模型见过什么噪声”和“测试时固定什么条件”分开；最后一批更小时，聚合也要按图片数算。</p><div class="jv-controls" id="jv-eval-tabs" role="group" aria-label="演示步骤"><button type="button" aria-pressed="false">同一权重</button><button type="button" aria-pressed="false">固定测试点</button><button type="button" aria-pressed="false">噪声重复</button><button type="button" aria-pressed="false">逐图聚合</button></div>
+    <div class="jv-stage" id="jv-eval-stage"></div>
+    <output class="jv-result" id="jv-eval-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">下方 20/10 dB 是聚合练习的人为数字，不是实验成绩。评测图没有绘制未经测量的性能曲线。</figcaption>
+</figure>
 <h3 id="ch3-budget">3.4 JPEG+BPSK：先数用了多少次信道</h3>
 <p>JPEG 输出<strong>字节</strong>，BPSK 输入<strong>比特</strong>，JSCC 输出<strong>连续实数</strong>。三者不能直接比长度。本教程统一按“实数信道使用次数”记预算：JSCC 发送 k 个实数就是 k 次；无编码 BPSK 每比特需要一次。</p>
 <div class="formula-card"><div class="f-head"><span class="f-tag">算法 3-2 · 无编码 BPSK 的发送账</span></div><div class="math-display">L=\operatorname{len}(\text{JPEG bytes}),\qquad K_{\mathrm{BPSK}}=8L</div><p>例如某张 JPEG 实测 700 字节，就需要 5600 次 BPSK 发送；本页 JSCC k=256 只发 256 次，不能把二者称作等带宽。加上 CRC、纠错编码和帧头后还会增加开销；码率 R=1/2 意味着每个信息比特大约对应两个编码比特。</p></div>
 <table class="map-table"><tr><th>对象</th><th>玩具数字</th><th>如何判断</th></tr><tr><td>JSCC</td><td>k=256 次实数使用</td><td>固定预算 256</td></tr><tr><td>JPEG＋无编码 BPSK</td><td>L=700 字节 → 5600 次</td><td>超预算，不能硬画在“等预算”对比里</td></tr><tr><td>可容纳的 JPEG</td><td>256/8=32 字节</td><td>连常规 JPEG 文件头都可能容不下；质量因子再低也不保证可行</td></tr></table>
 <p><strong>正确处理“不够装”：</strong>预先确定预算，在合法质量因子中实测文件大小；若没有任何完整码流符合预算，记录 <code>infeasible</code>（不可行）。不能截断字节伪装预算满足，也不能偷偷给 JPEG 更多信道使用次数。先用较大图或较宽预算做可行的教学比较；固定 32×32 的 V0 处理大图时要按分块数乘 k。</p>
 <div class="callout tip"><span class="co-title">BPSK 的 3 dB 口径坑</span>本页实数信道用 γ=P/σ²；传统 BPSK BER 图常用 γᵦ=Eᵦ/N₀。单位能量 BPSK、实维噪声方差 σ²=N₀/2 时，γ=2γᵦ，因此本页 SNR(dB)=Eᵦ/N₀(dB)+3.0103。复用单元 4 代码前先检查横轴和噪声公式，不能只把变量改名。</div>
+
+<figure class="viz-panel jv" id="fig-budget" aria-labelledby="jv-budget-title">
+  <div class="vp-head"><span class="vp-title" id="jv-budget-title">图解 3-B · 把字节、比特与信道次数放进同一本账</span></div>
+  <div class="vp-body"><p class="jv-intro">两条长度条使用同一线性刻度。改变字节数或发送预算，看比较条件是否一致。</p><div class="jv-controls"><label for="jv-budget-k">JSCC 预算 k<select id="jv-budget-k"><option value="256">256</option><option value="1024">1024</option><option value="8192">8192</option></select></label><label for="jv-jpeg-bytes">假设 JPEG 大小<input type="range" id="jv-jpeg-bytes" min="100" max="1000" step="25" value="700"><span id="jv-bytes-value"></span></label><label for="jv-code-rate">比特编码码率<select id="jv-code-rate"><option value="1">1：无纠错编码</option><option value="0.5">1/2：理想长度换算</option></select></label></div>
+    <div class="jv-stage" id="jv-budget-stage"></div>
+    <output class="jv-result" id="jv-budget-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">字节数是人为给定的预算练习，不是实际 JPEG 编码结果。码率换算未计尾比特、填充或额外帧头；实际实验必须计入完整码流开销。改变本教学模型 k 需要另行组装训练。</figcaption>
+</figure>
 <h3>3.5 JPEG 基线链路：失败也属于结果</h3>
 <ol class="steps"><li>原图编码成完整 JPEG 字节，记录字节数、质量因子、色度采样及帧开销。</li><li>字节拆成比特，映射 0→+1、1→−1。注意 NumPy 的 uint8：先转浮点再算 <code>1.0 - 2.0 * bits</code>，避免负数回绕。</li><li>按同一种实数 SNR 定义加噪，接收值小于 0 判为 1，再按原顺序拼回字节。</li><li>用解码器完整加载图像；解码可能抛错，也可能成功但图已受损。若实验定义了 CRC，则按 CRC 规则判失败，且开销计入预算。</li><li>预先约定失败图的替代规则，例如输出全 0.5 灰图，然后与原图计算 PSNR；同时报告解码失败率，不能只平均成功图片。</li></ol>
 <p><strong>实验级别要写明：</strong>JPEG＋无编码 BPSK 是理解码流脆弱性的入门基线。它没有 LDPC 等纠错保护，不能代表所有传统通信系统。要研究强分离式方案，应加入明确的纠错编码与码率，或单列“理想容量基线”并披露理想假设。不能用人为设置的 5 dB 崩坏门限替代实验。</p>
@@ -824,6 +908,15 @@ print(torch.equal(x, restored))</pre><script class="cc-notes" type="application/
  [ 8,  9, 12, 13],   ← 左下块
  [10, 11, 14, 15]]   ← 右下块
 拼回后与原图完全相等：True</pre>
+
+<figure class="viz-panel jv" id="fig-patch" aria-labelledby="jv-patch-title">
+  <div class="vp-head"><span class="vp-title" id="jv-patch-title">图解 4-A · 追着 0—15 看清切块和拼回</span></div>
+  <div class="vp-body"><p class="jv-intro">四种颜色表示四个 2×2 小块。点选一块，在原图和 token 排列中追踪相同数字。</p><div class="jv-controls" id="jv-patch-tabs" role="group" aria-label="演示步骤"><button type="button" aria-pressed="false">块 0：左上</button><button type="button" aria-pressed="false">块 1：右上</button><button type="button" aria-pressed="false">块 2：左下</button><button type="button" aria-pressed="false">块 3：右下</button></div>
+    <div class="jv-stage" id="jv-patch-stage"></div>
+    <output class="jv-result" id="jv-patch-result" aria-live="polite"></output>
+  </div>
+  <figcaption class="jv-caption">块数 N=4、每块长度=4 只是恰好相等，含义不同。本节真实 RGB、32×32、p=4 对应 N=64、每块长度=48。</figcaption>
+</figure>
 <h3 id="ch4-embed">4.3 投影与位置：告诉网络“这块在哪”</h3>
 <p>每块 48 个数经过同一个 <code>nn.Linear(48,64)</code>，变成一个 64 维 token。<strong>共享</strong>的意思是 64 个块使用同一套权重，不是各自造一个 Linear。这与词表 Embedding 查行不同：图像 patch 是连续数，需要做矩阵乘法。</p>
 <div class="formula-card"><div class="f-head"><span class="f-tag">算法 4-1 · 第 j 块变 token</span></div><div class="math-display">t_j=Wq_j+b</div><div class="math-display">u_j=t_j+e_j</div><p>qⱼ 是 48 维小块，W 是 64×48 权重，b 是 64 维偏置，eⱼ 是“第 j 块”的 64 维位置向量。位置表形状 (1,64,64)，与整批 (B,64,64) 相加，最前面的 1 广播到 B。</p></div>
@@ -848,6 +941,18 @@ print(result.shape)    # torch.Size([2, 64, 64])</pre><script class="cc-notes" t
 <p><strong>三个容易混的64：</strong>N=64是图块数；d=64是每块特征宽度；单头关系表恰好也是64×64，因为每个query块都要和每个key块配对。头数4不是把64个图块分成四组，而是把每个图块的特征投影后拆成4份，每头仍看全部64块。</p>
 <p>本例没有传 activation 参数，PyTorch 默认用 ReLU；若改成 GELU，要记录这是另一处配置变化。注意力在块与块之间交换信息，FFN则对每个块使用同一套非线性变换。两条残差都在各自一端内部，不能跨越噪声信道把干净特征送到接收端。</p>
 
+
+<figure class="viz-panel jv" id="fig-att" aria-labelledby="jv-att-title">
+  <div class="vp-head"><span class="vp-title" id="jv-att-title">图解 4-B · 注意力权重究竟怎样混合图块</span></div>
+  <div class="vp-body"><p class="jv-intro">保留正文的两个 key 手算例子，只改变第二个缩放分数。看权重如何变化，以及它怎样乘到 V 上。</p><div class="jv-controls"><label for="jv-att-score">第二个分数 ln(r)<input type="range" id="jv-att-score" min="1" max="9" step="0.1" value="3"><span id="jv-att-score-value"></span></label></div>
+    <div class="jv-stage" id="jv-att-stage"></div>
+    <output class="jv-result" id="jv-att-result" aria-live="polite"></output><div class="jv-stage"><b class="jv-label">接回完整 Pre-LN 块：两条残差各自绕过一个子层</b>
+<div class="jv-cols"><div><span class="jv-label">第一次：R = T + MHA(LN₁(T))</span><div class="jv-residual"><div class="jv-skip">T<br>旁路</div><div class="jv-path"><span>LN₁(T)</span><span>MHA：块间交换信息</span></div><div class="jv-add">+</div></div></div>
+<div><span class="jv-label">第二次：输出 = R + FFN(LN₂(R))</span><div class="jv-residual"><div class="jv-skip">R<br>旁路</div><div class="jv-path"><span>LN₂(R)</span><span>FFN：每块内部变换</span></div><div class="jv-add">+</div></div></div></div>
+<p class="jv-caption">外部形状都为 (B,N,d)。MHA 在各块间混合，FFN 对每块共享同一套变换；残差只在各自一端内部，不能绕过信道。</p></div>
+  </div>
+  <figcaption class="jv-caption">上图只有一个头、一个 query 行、两个 key。真实每头关系表为 N×N；多头拆分特征，每个头仍看全部图块。</figcaption>
+</figure>
 <h3 id="ch4-bottleneck">4.5 真正的瓶颈：4096 个特征 → k 个发送数</h3>
 <p>64×64=4096 个 token 特征<strong>不能全部偷偷传过去</strong>。编码器末尾把它们展平成 (B,4096)，再用 Linear(4096,k) 压成 (B,k)，之后复用第 1 章功率归一化和信道。编码器内部 d=64，并不等于发送预算 k。</p>
 <table class="map-table"><tr><th>阶段</th><th>完整形状（k=256）</th><th>要做的事</th></tr><tr><td>输入</td><td>(B,3,32,32)</td><td>像素 [0,1]</td></tr><tr><td>切块</td><td>(B,64,48)</td><td>按块行、块列顺序排列</td></tr><tr><td>投影＋位置</td><td>(B,64,64)</td><td>Linear(48,64) 加位置表</td></tr><tr><td>发送端注意力</td><td>(B,64,64)</td><td>例如 2 个独立 block，头数 4</td></tr><tr><td>展平＋瓶颈</td><td>(B,4096) → (B,256)</td><td>只有 256 个实数过信道</td></tr><tr><td>功率约束＋信道</td><td>(B,256)</td><td>原有归一化与 AWGN</td></tr><tr><td>接收端 SNR 注入</td><td>(B,258)</td><td>拼入 2 个已知条件特征</td></tr><tr><td>恢复 token</td><td>(B,4096) → (B,64,64)</td><td>Linear(258,4096)，加接收端位置表</td></tr><tr><td>接收端注意力</td><td>(B,64,64)</td><td>使用接收端自己的 block 参数</td></tr><tr><td>预测各块像素</td><td>(B,64,48)</td><td>逐 token Linear(64,48)＋Sigmoid</td></tr><tr><td>拼回图像</td><td>(B,3,32,32)</td><td>按 4.2 的逆排列，之后与原图算 MSE</td></tr></table>
@@ -967,6 +1072,15 @@ True</pre>
     <li>loss 降得极慢：先检查数据、梯度和小批拟合，再根据验证结果调整学习率；记录优化器及其配置，不能只凭下降慢就认定是优化器类型错误</li>
     <li>CUDA 报错：snr_features 是 CPU 张量，<code>.to(s.device)</code> 在不在（2.4 代码卡注解）</li>
   </ol>
+
+<figure class="viz-panel jv" id="fig-debug" aria-labelledby="jv-debug-title">
+  <div class="vp-head"><span class="vp-title" id="jv-debug-title">图解 5-A · 卡住时，沿现象找到第一项检查</span></div>
+  <div class="vp-body"><p class="jv-intro">选当前现象，按从左到右的顺序定位。先找第一个异常位置，再改对应的代码。</p><div class="jv-controls" id="jv-debug-tabs" role="group" aria-label="演示步骤"><button type="button" aria-pressed="false">形状报错</button><button type="button" aria-pressed="false">loss 是 NaN</button><button type="button" aria-pressed="false">编码器没梯度</button><button type="button" aria-pressed="false">loss 不降</button></div>
+    <div class="jv-stage" id="jv-debug-stage"></div>
+    <output class="jv-result" id="jv-debug-result" aria-live="polite"></output><div class="jv-links"><a href="#fig-module">回看模块登记</a><a href="#fig-tensor">回看形状操作</a><a href="#fig-train">回看训练五连</a><a href="#ch4-bottleneck">回看信道瓶颈</a></div>
+  </div>
+  <figcaption class="jv-caption">这张图帮助排查，不替代本章的四关卡与 V1 六项验收。</figcaption>
+</figure>
 <h3 id="ch5-v1">V1 追加验收：从能读懂到能自己解释</h3><p>前面四关验证 V0 基础。完成第 4 章后，再逐项完成下面的 V1 验收；不把“看过页面”当成已经掌握。</p><ol class="steps"><li>不看图写出十二步数据流，解释 3072、64、48、4096、256、258 各自是什么。</li><li>亲手组装 V1-base，在 batch=1/2 下核对输出尺寸与功率；做无噪和 AWGN 前向反传，检查梯度有限，小批拟合用于排错。</li><li>用两块四维数字手算门控，再说明 (B,d) 为什么变成 (B,1,d)。记录局部跑码件结果。</li><li>核对 V1-gate 只新增接收端门控，参数进入优化器；解释1120个参数为何不增加k。</li><li>完成一组真实 V0/V1-base 对照后再训练 V1-gate。报告实际质量、参数、耗时与随机重复情况，无预设胜负。</li><li>白板解释本教学V1与SwinJSCC的差别，指出什么信息可以到达接收端。</li></ol></section>
 
 <!-- ================= 附录 A 术语卡 ================= -->
