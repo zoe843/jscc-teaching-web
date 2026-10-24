@@ -12,7 +12,7 @@
     ["功率归一化", "(B,256)", "每张图的 256 个符号按自身 RMS 归一化，平均平方约为 1。", "不能把整个 batch 混着归一化，也不能用增大发射幅度抵消噪声。"],
     ["通过信道", "(B,256) → (B,256)", "AWGN：y=s+n。实数约定下 σ=10^(−SNR_true/20)。", "橙框是两端的边界。只有这 256 个数通过它；随机噪声仍允许对 s 求梯度。"],
     ["拼接接收条件", "(B,256) → (B,258)", "接收端拼入由 SNR_est 计算的两个条件特征，沿用第 2 章接口。", "理想实验设 SNR_est=SNR_true。条件由本地估计或约定获得，不能偷用原图信息。"],
-    ["恢复 token", "(B,4096) → (B,64,64)", "Linear(258,4096) 后 reshape，再加接收端自己的位置表。", "4.7 的可选 SNR 门控放在这里，位于第一个接收端注意力块之前。"],
+    ["恢复 token", "(B,258) → (B,4096) → (B,64,64)", "Linear(258,4096) 后 reshape，再加接收端自己的位置表。", "4.7 的可选 SNR 门控放在这里，位于第一个接收端注意力块之前。"],
     ["接收端注意力", "(B,64,64)", "只根据收到的信息混合各块特征，使用接收端自己的参数。", "通信 decoder 可以由 TransformerEncoderLayer 构成；没有翻译模型的因果遮罩要求。"],
     ["还原像素", "(B,64,48) → (B,3,32,32)", "每块共享 Linear(64,48)，经 Sigmoid 后按逆排列拼回整图。", "这是学出来的重建，不是编码器的精确逆函数。"],
     ["误差与反传", "MSE：一个标量", "训练时用重建图与原图计算 MSE，再沿解码器、信道、编码器反向传播。", "原图作为训练目标是允许的；部署时它不能作为接收端输入。"]
@@ -35,6 +35,7 @@
       $('tl-flow-shape').textContent = flow[i][1];
       $('tl-flow-body').textContent = flow[i][2];
       $('tl-flow-caution').textContent = flow[i][3];
+      if (window.JSCCFlowVisual) window.JSCCFlowVisual.show(i);
       $('tl-prev').disabled = i === 0; $('tl-next').disabled = i === flow.length - 1;
     }
     $('tl-prev').addEventListener('click', () => show(Math.max(0,current-1)));
